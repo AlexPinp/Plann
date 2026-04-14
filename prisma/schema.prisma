@@ -1,0 +1,350 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  /// Lecture seule du planning
+  AGENT
+  /// Modification planning, agents et compétences
+  CADRE
+  /// Même périmètre que cadre
+  REFERENT
+  /// Tous les droits
+  ADMIN
+}
+
+enum ShiftCategory {
+  JOUR10
+  JOUR12
+  JOUR7_50
+  NUIT
+}
+
+enum AvailabilityType {
+  CONGE
+  ARRET
+  FORMATION
+  AUTRE
+}
+
+enum PlanningStatus {
+  DRAFT
+  VALIDATED
+  PUBLISHED
+}
+
+enum PlanningCommentType {
+  CA
+  FORMATION
+  ABSENCE
+  INFO
+  BLOCAGE
+}
+
+enum PlanningCommentStatus {
+  NONE
+  PENDING
+  APPROVED
+  REFUSED
+}
+
+enum PlanningCommentVisibility {
+  TEAM
+  MANAGER
+  PRIVATE
+}
+
+enum PlanningRhProfile {
+  WITH_RTT_VARIABLE_1
+  WITH_RTT_VARIABLE_2
+  WITH_RTT_FIXED
+  WITH_RTT_NIGHT
+  WITH_RTT_FORFAIT_JOUR
+  WITHOUT_RTT_VARIABLE_1
+  WITHOUT_RTT_VARIABLE_2
+  WITHOUT_RTT_FIXED
+}
+
+enum LeaveRequestType {
+  CA
+  CF
+  CH
+  RTT
+  REC
+  AUTRE
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REFUSED
+  CANCELLED
+}
+
+enum CommentaryStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model User {
+  id                  String         @id @default(cuid())
+  firstName           String
+  lastName            String
+  email               String         @unique
+  /// Identifiant Supabase Auth (auth.users.id) — lie le compte applicatif à l’agent
+  authUserId          String?        @unique
+  role                UserRole       @default(AGENT)
+  active              Boolean        @default(true)
+  /// Temps de travail en pourcentage (100 = temps plein)
+  workPercentage      Int            @default(100)
+  /// Libellé du bloc (équipe / pole) pour la vue planning admin type grille mensuelle
+  planningGroupLabel  String?
+  /// Couleur de fond de la colonne noms (#hex), ex. #c8e6c9
+  planningGroupColor  String?
+  /// Ordre d'affichage dans le groupe puis entre groupes
+  displayOrder        Int            @default(0)
+  /// Numero de trame cyclique attribue (1..33)
+  planningTemplateNumber Int?
+  /// Activer le mode alternance A/B (ex: SMUR/Urgences)
+  isAlternant         Boolean        @default(false)
+  /// Duree d'un bloc avant bascule A/B (en semaines), ex: 6
+  alternanceCycleWeeks Int           @default(6)
+  /// Date d'ancrage du cycle alternant (lundi de demarrage recommande)
+  alternanceAnchorDate DateTime?
+  /// Decalage de phase (0 ou 1) pour inverser deux binomes
+  alternancePhase      Int           @default(0)
+  /// Trame appliquee pendant l'etat A
+  planningTemplateNumberA Int?
+  /// Trame appliquee pendant l'etat B
+  planningTemplateNumberB Int?
+  /// Bloc/equipe pendant l'etat A
+  planningGroupLabelA   String?
+  /// Bloc/equipe pendant l'etat B
+  planningGroupLabelB   String?
+  /// Lien direct vers le binome alternant
+  alternancePartnerId   String?      @unique
+  /// Profil RH CHD pour le calcul des droits/récap (RTT, base horaire, OAT)
+  planningRhProfile   PlanningRhProfile @default(WITH_RTT_VARIABLE_1)
+  alternancePartner   User?          @relation("AlternancePartner", fields: [alternancePartnerId], references: [id], onDelete: SetNull)
+  alternancePartnerOf User?          @relation("AlternancePartner")
+  assignments         Assignment[]
+  skills         UserSkill[]
+  availabilities Availability[]
+  leaveRequests  LeaveRequest[]
+  decisionsMade  LeaveRequest[] @relation("LeaveRequestDecider")
+  auditLogs      AuditLog[]     @relation("AuditActor")
+  planningComments PlanningComment[] @relation("PlanningCommentUser")
+  planningCommentsCreated PlanningComment[] @relation("PlanningCommentCreator")
+  commentaryEntriesCreated CommentaryEntry[] @relation("CommentaryEntryCreator")
+  followUpEntriesCreated FollowUpEntry[] @relation("FollowUpEntryCreator")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Skill {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  users     UserSkill[]
+  shifts    ShiftSkill[]
+  createdAt DateTime    @default(now())
+}
+
+model UserSkill {
+  userId  String
+  skillId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId])
+}
+
+model ShiftType {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  label       String
+  color       String
+  startsAt    String
+  endsAt      String
+  category    ShiftCategory
+  assignments Assignment[]
+  templateEntries PlanningTemplateEntry[]
+  skills      ShiftSkill[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model ShiftSkill {
+  shiftTypeId String
+  skillId     String
+  shiftType   ShiftType @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
+  skill       Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([shiftTypeId, skillId])
+}
+
+model Availability {
+  id        String           @id @default(cuid())
+  userId    String
+  startsAt  DateTime
+  endsAt    DateTime
+  type      AvailabilityType
+  note      String?
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+}
+
+model PlanningWeek {
+  id              String         @id @default(cuid())
+  weekStart       DateTime       @unique
+  status          PlanningStatus @default(DRAFT)
+  validatedAt     DateTime?
+  validatedBy     String?
+  /// Nom complet de la personne ayant validé (pour affichage historique)
+  validatedByName String?
+  publishedAt     DateTime?
+  publishedBy     String?
+  assignments     Assignment[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model PlanningTemplate {
+  id        String                 @id @default(cuid())
+  number    Int                    @unique
+  entries   PlanningTemplateEntry[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+model PlanningTemplateEntry {
+  id          String           @id @default(cuid())
+  templateId  String
+  dayOffset   Int
+  shiftTypeId String?
+  template    PlanningTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  shiftType   ShiftType?       @relation(fields: [shiftTypeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([templateId, dayOffset])
+  @@index([shiftTypeId])
+}
+
+model Assignment {
+  id             String      @id @default(cuid())
+  planningWeekId String
+  shiftTypeId    String
+  userId         String?
+  date           DateTime
+  note           String?
+  planningWeek   PlanningWeek @relation(fields: [planningWeekId], references: [id], onDelete: Cascade)
+  shiftType      ShiftType    @relation(fields: [shiftTypeId], references: [id], onDelete: Restrict)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, date])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  details   String?
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}
+
+model LeaveRequest {
+  id        String             @id @default(cuid())
+  userId    String
+  decidedById String?
+  decidedByName String?
+  type      LeaveRequestType
+  startsAt  DateTime
+  endsAt    DateTime
+  note      String?
+  decisionNote String?
+  status    LeaveRequestStatus @default(PENDING)
+  decidedAt DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy User?              @relation("LeaveRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, startsAt])
+  @@index([createdAt])
+  @@index([decidedById])
+}
+
+model PlanningComment {
+  id         String                   @id @default(cuid())
+  userId     String
+  date       DateTime
+  type       PlanningCommentType
+  status     PlanningCommentStatus    @default(NONE)
+  visibility PlanningCommentVisibility @default(TEAM)
+  text       String
+  createdById String?
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+  user       User                     @relation("PlanningCommentUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy  User?                    @relation("PlanningCommentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([date])
+  @@index([createdById])
+}
+
+model CommentaryEntry {
+  id            String           @id @default(cuid())
+  monthLabel    String?
+  datesLabel    String?
+  subject       String
+  personnel     String?
+  trainer       String?
+  comment       String?
+  status        CommentaryStatus @default(TODO)
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  createdBy     User?            @relation("CommentaryEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([createdById])
+}
+
+model FollowUpEntry {
+  id            String    @id @default(cuid())
+  subject       String
+  personnel     String?
+  lastDate      DateTime?
+  lastBy        String?
+  nextDate      DateTime?
+  nextBy        String?
+  note          String?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     User?     @relation("FollowUpEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([nextDate])
+}

@@ -1,0 +1,348 @@
+import { ShiftCategory } from "@/generated/prisma/enums";
+import { prisma } from "@/lib/prisma";
+import { requireStaffAdmin } from "@/lib/require-staff-admin";
+import { createShiftCode, deleteShiftCode, updateShiftCode } from "./actions";
+
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getStringParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : "";
+}
+
+function getShiftHours(startsAt: string, endsAt: string): number {
+  const [startH, startM] = startsAt.split(":").map(Number);
+  const [endH, endM] = endsAt.split(":").map(Number);
+  if ([startH, startM, endH, endM].some((v) => Number.isNaN(v))) return 0;
+  let start = startH * 60 + startM;
+  let end = endH * 60 + endM;
+  if (end <= start) end += 24 * 60;
+  return Math.round(((end - start) / 60) * 100) / 100;
+}
+
+export default async function AdminShiftCodesPage({ searchParams }: Props) {
+  await requireStaffAdmin();
+
+  const params = await searchParams;
+  const error = typeof params.error === "string" ? params.error : undefined;
+  const created = params.created === "1";
+  const updated = params.updated === "1";
+  const deleted = params.deleted === "1";
+  const q = getStringParam(params.q).trim().toLowerCase();
+  const categoryFilter = getStringParam(params.category);
+  const sort = getStringParam(params.sort) || "code-asc";
+
+  const allShifts = await prisma.shiftType.findMany({
+    orderBy: [{ code: "asc" }],
+  });
+  const filteredShifts = allShifts
+    .filter((shift) => {
+      if (categoryFilter && categoryFilter !== "all" && shift.category !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        shift.code.toLowerCase().includes(q) ||
+        shift.label.toLowerCase().includes(q) ||
+        shift.category.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      if (sort === "code-desc") return b.code.localeCompare(a.code);
+      if (sort === "hours-asc") return getShiftHours(a.startsAt, a.endsAt) - getShiftHours(b.startsAt, b.endsAt);
+      if (sort === "hours-desc") return getShiftHours(b.startsAt, b.endsAt) - getShiftHours(a.startsAt, a.endsAt);
+      if (sort === "category") return a.category.localeCompare(b.category) || a.code.localeCompare(b.code);
+      return a.code.localeCompare(b.code);
+    });
+
+  return (
+    <main>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-zinc-900">Codes horaires</h1>
+        <p className="mt-1 text-sm text-zinc-600">
+          Créez, modifiez ou supprimez les codes utilisés dans le planning, avec leur valeur en heures.
+        </p>
+      </div>
+
+      {created && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code créé.</p>}
+      {updated && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code mis à jour.</p>}
+      {deleted && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code supprimé.</p>}
+      {error && <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+
+      <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <form method="get" className="grid gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <label htmlFor="q" className="text-xs font-medium text-zinc-600">
+              Recherche
+            </label>
+            <input
+              id="q"
+              name="q"
+              defaultValue={q}
+              placeholder="Code, nom ou catégorie"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="categoryFilter" className="text-xs font-medium text-zinc-600">
+              Catégorie
+            </label>
+            <select
+              id="categoryFilter"
+              name="category"
+              defaultValue={categoryFilter || "all"}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value="all">Toutes</option>
+              <option value={ShiftCategory.JOUR10}>JOUR10</option>
+              <option value={ShiftCategory.JOUR12}>JOUR12</option>
+              <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+              <option value={ShiftCategory.NUIT}>NUIT</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="sort" className="text-xs font-medium text-zinc-600">
+              Tri
+            </label>
+            <select
+              id="sort"
+              name="sort"
+              defaultValue={sort}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value="code-asc">Code (A → Z)</option>
+              <option value="code-desc">Code (Z → A)</option>
+              <option value="hours-asc">Heures (croissant)</option>
+              <option value="hours-desc">Heures (décroissant)</option>
+              <option value="category">Catégorie puis code</option>
+            </select>
+          </div>
+          <div className="md:col-span-4 flex items-center justify-between">
+            <p className="text-xs text-zinc-500">
+              {filteredShifts.length} code(s) affiché(s) sur {allShifts.length}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+              >
+                Filtrer
+              </button>
+              <a
+                href="/admin/codes-horaires"
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                Réinitialiser
+              </a>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <table className="w-full min-w-[980px] border-collapse text-sm">
+          <thead className="bg-zinc-50">
+            <tr>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Code</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Nom</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Debut</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Fin</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Valeur (h)</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Couleur</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Catégorie</th>
+              <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredShifts.map((shift) => (
+              <tr key={shift.id} className="align-top">
+                <td className="border-b border-zinc-100 p-3">
+                  <input type="hidden" form={`update-${shift.id}`} name="id" value={shift.id} />
+                  <input
+                    form={`update-${shift.id}`}
+                    name="code"
+                    required
+                    defaultValue={shift.code}
+                    className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs font-semibold uppercase"
+                  />
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <input
+                    form={`update-${shift.id}`}
+                    name="label"
+                    required
+                    defaultValue={shift.label}
+                    className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+                  />
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <input
+                    form={`update-${shift.id}`}
+                    name="startsAt"
+                    type="time"
+                    defaultValue={shift.startsAt}
+                    className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+                  />
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <input
+                    form={`update-${shift.id}`}
+                    name="endsAt"
+                    type="time"
+                    defaultValue={shift.endsAt}
+                    className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+                  />
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs font-semibold text-zinc-700">
+                    {getShiftHours(shift.startsAt, shift.endsAt)}
+                  </div>
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <input
+                    form={`update-${shift.id}`}
+                    name="color"
+                    type="color"
+                    defaultValue={shift.color}
+                    className="h-9 w-14 rounded-md border border-zinc-300 p-1"
+                  />
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <select
+                    form={`update-${shift.id}`}
+                    name="category"
+                    defaultValue={shift.category}
+                    className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+                  >
+                    <option value={ShiftCategory.JOUR10}>JOUR10</option>
+                    <option value={ShiftCategory.JOUR12}>JOUR12</option>
+                    <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+                    <option value={ShiftCategory.NUIT}>NUIT</option>
+                  </select>
+                </td>
+                <td className="border-b border-zinc-100 p-3">
+                  <div className="flex flex-wrap gap-2">
+                    <form id={`update-${shift.id}`} action={updateShiftCode}>
+                      <button
+                        type="submit"
+                        className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+                      >
+                        Enregistrer
+                      </button>
+                    </form>
+                    <form action={deleteShiftCode}>
+                      <input type="hidden" name="id" value={shift.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-700 hover:bg-rose-50"
+                      >
+                        Supprimer
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredShifts.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="p-6 text-center text-sm text-zinc-500">
+                  Aucun code ne correspond au filtre actuel.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Nouveau code horaire</h2>
+        <form action={createShiftCode} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          <div>
+            <label htmlFor="code" className="text-xs font-medium text-zinc-600">
+              Code
+            </label>
+            <input
+              id="code"
+              name="code"
+              required
+              maxLength={16}
+              placeholder="JM1"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <label htmlFor="label" className="text-xs font-medium text-zinc-600">
+              Nom
+            </label>
+            <input
+              id="label"
+              name="label"
+              required
+              placeholder="Jour matin 1"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="color" className="text-xs font-medium text-zinc-600">
+              Couleur
+            </label>
+            <input
+              id="color"
+              name="color"
+              type="color"
+              defaultValue="#e5e7eb"
+              className="mt-1 h-10 w-full rounded-lg border border-zinc-300 px-1.5 py-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="category" className="text-xs font-medium text-zinc-600">
+              Catégorie
+            </label>
+            <select
+              id="category"
+              name="category"
+              defaultValue={ShiftCategory.JOUR10}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value={ShiftCategory.JOUR10}>JOUR10</option>
+              <option value={ShiftCategory.JOUR12}>JOUR12</option>
+              <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+              <option value={ShiftCategory.NUIT}>NUIT</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="startsAt" className="text-xs font-medium text-zinc-600">
+              Debut (HH:MM)
+            </label>
+            <input
+              id="startsAt"
+              name="startsAt"
+              type="time"
+              defaultValue="08:00"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="endsAt" className="text-xs font-medium text-zinc-600">
+              Fin (HH:MM)
+            </label>
+            <input
+              id="endsAt"
+              name="endsAt"
+              type="time"
+              defaultValue="16:00"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-6">
+            <button
+              type="submit"
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+            >
+              Créer le code
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
