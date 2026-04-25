@@ -8,7 +8,11 @@ if (!connectionString) {
   throw new Error("Missing environment variable: DATABASE_URL");
 }
 
-const adapter = new PrismaPg({ connectionString });
+// Supabase utilise une chaîne de certificats que Node peut rejeter avec sslmode=require seul.
+const adapter = new PrismaPg({
+  connectionString,
+  ssl: { rejectUnauthorized: false },
+});
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 

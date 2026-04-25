@@ -8,6 +8,7 @@ export default defineConfig({
   migrations: {
     path: "prisma/migrations",
   },
+  // Migrate / introspect: use direct Postgres (Supabase port 5432). Pooler (6543) breaks migrations.
   datasource: {
     url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },

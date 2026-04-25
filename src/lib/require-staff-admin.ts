@@ -1,3 +1,4 @@
+
 import { UserRole } from "@/generated/prisma/enums";
 import type { User } from "@/generated/prisma/client";
 import { redirect } from "next/navigation";
@@ -25,7 +26,12 @@ export async function requireStaffAdmin(): Promise<StaffAgent> {
     redirect("/login?error=" + encodeURIComponent("Profil agent introuvable."));
   }
 
-  if (!PLANNING_AND_STAFF_ROLES.includes(agent.role)) {
+  const hasTeamStaffRole = await prisma.userTeam.findFirst({
+    where: { userId: agent.id, roleInTeam: { in: PLANNING_AND_STAFF_ROLES } },
+    select: { teamId: true },
+  });
+
+  if (!PLANNING_AND_STAFF_ROLES.includes(agent.role) && !hasTeamStaffRole) {
     redirect(
       "/?notice=" + encodeURIComponent("Accès réservé aux cadres, référents et administrateurs."),
     );

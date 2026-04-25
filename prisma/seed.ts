@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { ensureBaselineData } from "../src/lib/bootstrap";
 
 async function main() {

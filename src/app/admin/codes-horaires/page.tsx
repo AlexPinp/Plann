@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { ShiftCategory } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { getShiftDurationHoursRounded } from "@/lib/shift-hours";
 import { requireStaffAdmin } from "@/lib/require-staff-admin";
 import { createShiftCode, deleteShiftCode, updateShiftCode } from "./actions";
 
@@ -9,16 +11,6 @@ type Props = {
 
 function getStringParam(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
-}
-
-function getShiftHours(startsAt: string, endsAt: string): number {
-  const [startH, startM] = startsAt.split(":").map(Number);
-  const [endH, endM] = endsAt.split(":").map(Number);
-  if ([startH, startM, endH, endM].some((v) => Number.isNaN(v))) return 0;
-  let start = startH * 60 + startM;
-  let end = endH * 60 + endM;
-  if (end <= start) end += 24 * 60;
-  return Math.round(((end - start) / 60) * 100) / 100;
 }
 
 export default async function AdminShiftCodesPage({ searchParams }: Props) {
@@ -36,28 +28,36 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
   const allShifts = await prisma.shiftType.findMany({
     orderBy: [{ code: "asc" }],
   });
-  const filteredShifts = allShifts
-    .filter((shift) => {
-      if (categoryFilter && categoryFilter !== "all" && shift.category !== categoryFilter) return false;
-      if (!q) return true;
-      return (
-        shift.code.toLowerCase().includes(q) ||
-        shift.label.toLowerCase().includes(q) ||
-        shift.category.toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
+  const filtered = allShifts.filter((shift) => {
+    if (categoryFilter && categoryFilter !== "all" && shift.category !== categoryFilter) return false;
+    if (!q) return true;
+    return (
+      shift.code.toLowerCase().includes(q) ||
+      shift.label.toLowerCase().includes(q) ||
+      shift.category.toLowerCase().includes(q)
+    );
+  });
+
+  let filteredShifts: typeof filtered;
+  if (sort === "hours-asc" || sort === "hours-desc") {
+    const decorated = filtered.map((shift) => ({
+      shift,
+      hours: getShiftDurationHoursRounded(shift.startsAt, shift.endsAt),
+    }));
+    decorated.sort((a, b) => (sort === "hours-asc" ? a.hours - b.hours : b.hours - a.hours));
+    filteredShifts = decorated.map((d) => d.shift);
+  } else {
+    filteredShifts = [...filtered].sort((a, b) => {
       if (sort === "code-desc") return b.code.localeCompare(a.code);
-      if (sort === "hours-asc") return getShiftHours(a.startsAt, a.endsAt) - getShiftHours(b.startsAt, b.endsAt);
-      if (sort === "hours-desc") return getShiftHours(b.startsAt, b.endsAt) - getShiftHours(a.startsAt, a.endsAt);
       if (sort === "category") return a.category.localeCompare(b.category) || a.code.localeCompare(b.code);
       return a.code.localeCompare(b.code);
     });
+  }
 
   return (
     <main>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-zinc-900">Codes horaires</h1>
+        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Codes horaires</h1>
         <p className="mt-1 text-sm text-zinc-600">
           Créez, modifiez ou supprimez les codes utilisés dans le planning, avec leur valeur en heures.
         </p>
@@ -116,23 +116,23 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
               <option value="category">Catégorie puis code</option>
             </select>
           </div>
-          <div className="md:col-span-4 flex items-center justify-between">
+          <div className="md:col-span-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-zinc-500">
               {filteredShifts.length} code(s) affiché(s) sur {allShifts.length}
             </p>
-            <div className="flex gap-2">
+            <div className="flex w-full gap-2 sm:w-auto">
               <button
                 type="submit"
                 className="rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
               >
                 Filtrer
               </button>
-              <a
+              <Link
                 href="/admin/codes-horaires"
                 className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
               >
                 Réinitialiser
-              </a>
+              </Link>
             </div>
           </div>
         </form>
@@ -194,7 +194,7 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
                 </td>
                 <td className="border-b border-zinc-100 p-3">
                   <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs font-semibold text-zinc-700">
-                    {getShiftHours(shift.startsAt, shift.endsAt)}
+                    {getShiftDurationHoursRounded(shift.startsAt, shift.endsAt)}
                   </div>
                 </td>
                 <td className="border-b border-zinc-100 p-3">

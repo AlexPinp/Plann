@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signInWithPassword, signUpWithPassword } from "./actions";
 
-export default function LoginPage() {
+function LoginForm() {
   const [showSignup, setShowSignup] = useState(false);
-  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const error = params?.get("error") ?? undefined;
-  const registered = params?.get("registered") === "1";
-  const nextRaw = params?.get("next") ?? "/planning-moi";
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error") || undefined;
+  const registered = searchParams.get("registered") === "1";
+  const nextRaw = searchParams.get("next") ?? "/";
   const next =
-    nextRaw.startsWith("/") && !nextRaw.startsWith("//") && !nextRaw.includes("..") ? nextRaw : "/planning-moi";
+    nextRaw.startsWith("/") && !nextRaw.startsWith("//") && !nextRaw.includes("..") ? nextRaw : "/";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-100 p-4">
@@ -90,7 +91,7 @@ export default function LoginPage() {
                     autoComplete="email"
                     required
                     placeholder="prenom.nom@ght85.fr"
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
                   />
                 </div>
                 <div>
@@ -104,7 +105,7 @@ export default function LoginPage() {
                     autoComplete="new-password"
                     required
                     minLength={8}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
                   />
                 </div>
                 <div>
@@ -118,12 +119,12 @@ export default function LoginPage() {
                     autoComplete="new-password"
                     required
                     minLength={8}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
+                    className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
                 >
                   Creer mon compte
                 </button>
@@ -137,5 +138,21 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-zinc-100 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+            <p className="text-center text-sm text-zinc-500">Chargement…</p>
+          </div>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

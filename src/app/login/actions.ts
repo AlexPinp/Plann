@@ -47,7 +47,7 @@ export async function signInWithPassword(formData: FormData) {
     .trim()
     .toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const next = getSafeInternalPath(formData.get("next") || "/planning-moi");
+  const next = getSafeInternalPath(formData.get("next") || "/");
 
   if (!email || !password) {
     redirect(`/login?error=${encodeURIComponent("Email et mot de passe requis.")}`);

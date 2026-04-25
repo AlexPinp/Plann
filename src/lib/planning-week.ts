@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { LEGACY_DEFAULT_TEAM_ID } from "@/lib/team";
 
 /** Lundi de la semaine ISO (calendrier UTC) à midi UTC pour clé stable */
 export function startOfIsoWeekMondayUtc(date: Date): Date {
@@ -12,12 +13,12 @@ export function startOfIsoWeekMondayUtc(date: Date): Date {
   return new Date(Date.UTC(mid.getUTCFullYear(), mid.getUTCMonth(), mid.getUTCDate(), 12, 0, 0));
 }
 
-export async function getOrCreatePlanningWeekForDate(date: Date) {
+export async function getOrCreatePlanningWeekForDate(date: Date, teamId: string = LEGACY_DEFAULT_TEAM_ID) {
   const weekStart = startOfIsoWeekMondayUtc(date);
   return prisma.planningWeek.upsert({
-    where: { weekStart },
+    where: { teamId_weekStart: { teamId, weekStart } },
     update: {},
-    create: { weekStart },
+    create: { teamId, weekStart },
   });
 }
 

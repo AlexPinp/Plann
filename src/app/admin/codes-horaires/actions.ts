@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { ShiftCategory } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { requireStaffAdmin } from "@/lib/require-staff-admin";
+import { getAllTeams } from "@/lib/team";
+import { revalidateTeamPlanningSurfaces } from "@/lib/routes";
 
 function parseCategory(raw: FormDataEntryValue | null): ShiftCategory {
   const value = String(raw ?? "");
@@ -28,12 +30,12 @@ function parseTime(raw: FormDataEntryValue | null, fallback = "08:00"): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-function revalidateShiftPages() {
+async function revalidateShiftPages() {
   revalidatePath("/admin/codes-horaires");
-  revalidatePath("/admin/planning");
-  revalidatePath("/planning/admin");
-  revalidatePath("/planning-moi");
-  revalidatePath("/droits");
+  const teams = await getAllTeams();
+  for (const t of teams) {
+    revalidateTeamPlanningSurfaces(t.slug, revalidatePath);
+  }
 }
 
 export async function createShiftCode(formData: FormData) {
@@ -65,7 +67,7 @@ export async function createShiftCode(formData: FormData) {
     redirect("/admin/codes-horaires?error=" + encodeURIComponent("Impossible de creer ce code (deja existant ou invalide)."));
   }
 
-  revalidateShiftPages();
+  await revalidateShiftPages();
   redirect("/admin/codes-horaires?created=1");
 }
 
@@ -109,7 +111,7 @@ export async function updateShiftCode(formData: FormData) {
     redirect("/admin/codes-horaires?error=" + encodeURIComponent("Impossible de modifier ce code (doublon ou donnees invalides)."));
   }
 
-  revalidateShiftPages();
+  await revalidateShiftPages();
   redirect("/admin/codes-horaires?updated=1");
 }
 
@@ -128,6 +130,6 @@ export async function deleteShiftCode(formData: FormData) {
   }
 
   await prisma.shiftType.delete({ where: { id } });
-  revalidateShiftPages();
+  await revalidateShiftPages();
   redirect("/admin/codes-horaires?deleted=1");
 }

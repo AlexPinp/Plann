@@ -1,7 +1,26 @@
 import { prisma } from "@/lib/prisma";
-import { ShiftCategory, UserRole } from "@/generated/prisma/enums";
+import { ShiftCategory, TeamJob, TeamRhythm, UserRole } from "@/generated/prisma/enums";
+import { DEFAULT_TEMPLATE_CYCLE_WEEKS } from "@/lib/planning-template";
+
+/** Équipes de référence du service. Les slugs sont utilisés dans les URLs et
+ *  doivent rester stables ; les ids sont déterministes pour aligner seed et migration. */
+const TEAM_DEFINITIONS = [
+  { id: "team_ide_jour", slug: "ide-jour", label: "Infirmiers de jour",      job: TeamJob.IDE, rhythm: TeamRhythm.JOUR, color: "#bbf7d0", displayOrder: 0 },
+  { id: "team_ide_nuit", slug: "ide-nuit", label: "Infirmiers de nuit",      job: TeamJob.IDE, rhythm: TeamRhythm.NUIT, color: "#c7d2fe", displayOrder: 1 },
+  { id: "team_as_jour",  slug: "as-jour",  label: "Aides-soignants de jour", job: TeamJob.AS,  rhythm: TeamRhythm.JOUR, color: "#fde68a", displayOrder: 2 },
+  { id: "team_as_nuit",  slug: "as-nuit",  label: "Aides-soignants de nuit", job: TeamJob.AS,  rhythm: TeamRhythm.NUIT, color: "#fbcfe8", displayOrder: 3 },
+] as const;
+
+const DEFAULT_TEAM_SLUG = "ide-jour";
 
 export async function ensureBaselineData() {
+  await prisma.team.createMany({
+    data: TEAM_DEFINITIONS.map((t) => ({ ...t })),
+    skipDuplicates: true,
+  });
+
+  const defaultTeam = await prisma.team.findUniqueOrThrow({ where: { slug: DEFAULT_TEAM_SLUG } });
+
   const [shiftCount, userCount, skillCount] = await Promise.all([
     prisma.shiftType.count(),
     prisma.user.count(),
@@ -15,8 +34,16 @@ export async function ensureBaselineData() {
     });
   }
 
+  /* Trames de base uniquement pour l'équipe par défaut (IDE jour).
+   * Les autres équipes partiront d'une liste vide et les cadres créeront
+   * leurs propres trames avec la durée de cycle qui leur convient. */
   await prisma.planningTemplate.createMany({
-    data: Array.from({ length: 33 }, (_, i) => ({ number: i + 1 })),
+    data: Array.from({ length: 33 }, (_, i) => ({
+      teamId: defaultTeam.id,
+      number: i + 1,
+      label: `Trame ${i + 1}`,
+      cycleWeeks: DEFAULT_TEMPLATE_CYCLE_WEEKS,
+    })),
     skipDuplicates: true,
   });
 
@@ -74,9 +101,41 @@ export async function ensureBaselineData() {
           planningGroupColor: "#fce7f3",
           displayOrder: 0,
         },
+        {
+          firstName: "Test",
+          lastName: "Dev",
+          email: "test.dev@ght85.fr",
+          role: UserRole.REFERENT,
+          workPercentage: 100,
+          planningGroupLabel: "Bloc jour",
+          planningGroupColor: "#d1fae5",
+          displayOrder: 0,
+        },
       ],
       skipDuplicates: true,
     });
+  }
+
+  /* Compte de développement (email test.dev@ght85.fr) — mot de passe côté Supabase (inscription UI ou script auth:test-dev) */
+  {
+    const email = "test.dev@ght85.fr";
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+    });
+    if (!existing) {
+      await prisma.user.create({
+        data: {
+          firstName: "Test",
+          lastName: "Dev",
+          email,
+          role: UserRole.ADMIN,
+          workPercentage: 100,
+          planningGroupLabel: "Dev",
+          planningGroupColor: "#e2e8f0",
+          displayOrder: 999,
+        },
+      });
+    }
   }
 
   /* Au moins un administrateur (bases déjà peuplées sans rôle ADMIN) */
@@ -105,5 +164,32 @@ export async function ensureBaselineData() {
       },
     });
     idx += 1;
+  }
+
+  /* Assurer qu'à terme chaque utilisateur est rattaché à au moins une équipe.
+   * Par défaut : IDE jour (équipe historique) en équipe primaire, en recopiant
+   * les champs de planning portés jusqu'ici sur User pour ne rien perdre. */
+  const usersNoTeam = await prisma.user.findMany({
+    where: { teams: { none: {} } },
+    orderBy: [{ createdAt: "asc" }],
+  });
+  if (usersNoTeam.length > 0) {
+    await prisma.userTeam.createMany({
+      data: usersNoTeam.map((u) => ({
+        userId: u.id,
+        teamId: defaultTeam.id,
+        roleInTeam: u.role,
+        isPrimary: true,
+        planningGroupLabel: u.planningGroupLabel,
+        planningGroupColor: u.planningGroupColor,
+        displayOrder: u.displayOrder,
+        planningTemplateNumber: u.planningTemplateNumber,
+        planningTemplateNumberA: u.planningTemplateNumberA,
+        planningTemplateNumberB: u.planningTemplateNumberB,
+        planningGroupLabelA: u.planningGroupLabelA,
+        planningGroupLabelB: u.planningGroupLabelB,
+      })),
+      skipDuplicates: true,
+    });
   }
 }

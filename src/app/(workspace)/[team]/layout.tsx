@@ -1,0 +1,63 @@
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { WorkspaceTabs } from "@/components/WorkspaceTabs";
+import { canEditPlanningAndStaff } from "@/lib/user-roles";
+import { getUserTeams, requireTeamMembership } from "@/lib/team";
+import { adminTeamPath } from "@/lib/routes";
+import { signOut } from "../../login/actions";
+
+type Props = {
+  children: ReactNode;
+  params: Promise<{ team: string }>;
+};
+
+export default async function TeamWorkspaceLayout({ children, params }: Props) {
+  const { team: teamSlug } = await params;
+  const ctx = await requireTeamMembership(teamSlug);
+  const canStaff = canEditPlanningAndStaff(ctx.user.role);
+  const memberships = await getUserTeams(ctx.user.id);
+  const switcherTeams = memberships.map((ut) => ({
+    slug: ut.team.slug,
+    label: ut.team.label,
+    color: ut.team.color,
+  }));
+
+  return (
+    <div className="flex min-h-full flex-col">
+      <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4 md:px-6">
+          <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+            <span className="text-sm font-bold text-zinc-900">Planner SAU</span>
+            <span className="truncate text-xs font-medium text-zinc-500" title={ctx.team.label}>
+              {ctx.team.label}
+            </span>
+          </div>
+
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-3">
+            <span className="hidden text-xs text-zinc-500 sm:inline">
+              {ctx.user.lastName.toUpperCase()} {ctx.user.firstName}
+            </span>
+            {canStaff && (
+              <Link
+                href={adminTeamPath(teamSlug, "planning")}
+                className="rounded-md border border-zinc-900 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
+              >
+                Administration
+              </Link>
+            )}
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+              >
+                Deconnexion
+              </button>
+            </form>
+          </div>
+        </div>
+        <WorkspaceTabs teamSlug={teamSlug} switcherTeams={switcherTeams} />
+      </header>
+      {children}
+    </div>
+  );
+}

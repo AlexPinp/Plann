@@ -97,6 +97,18 @@ enum CommentaryStatus {
   DONE
 }
 
+/// Métier d'une équipe (infirmier ou aide-soignant)
+enum TeamJob {
+  IDE
+  AS
+}
+
+/// Rythme de travail principal d'une équipe (jour ou nuit)
+enum TeamRhythm {
+  JOUR
+  NUIT
+}
+
 model User {
   id                  String         @id @default(cuid())
   firstName           String
@@ -148,8 +160,74 @@ model User {
   planningCommentsCreated PlanningComment[] @relation("PlanningCommentCreator")
   commentaryEntriesCreated CommentaryEntry[] @relation("CommentaryEntryCreator")
   followUpEntriesCreated FollowUpEntry[] @relation("FollowUpEntryCreator")
+  /// Appartenance(s) de l'utilisateur aux équipes (IDE jour/nuit, AS jour/nuit, ...)
+  teams          UserTeam[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+}
+
+/// Équipe fonctionnelle du service (IDE jour, IDE nuit, AS jour, AS nuit, ...).
+/// Chaque équipe gère de façon indépendante ses trames, ses semaines de planning,
+/// ses membres et ses cadres/référents.
+model Team {
+  id           String             @id @default(cuid())
+  /// Identifiant stable utilisé dans les URLs (ex: "ide-jour")
+  slug         String             @unique
+  /// Libellé affiché (ex: "Infirmiers de jour")
+  label        String
+  /// Métier IDE / AS
+  job          TeamJob
+  /// Rythme jour / nuit
+  rhythm       TeamRhythm
+  /// Couleur d'accent (#hex) pour les UI (sélecteur, badges)
+  color        String             @default("#e2e8f0")
+  /// Ordre d'affichage (dans le sélecteur d'équipe et les listes)
+  displayOrder Int                @default(0)
+  members      UserTeam[]
+  templates    PlanningTemplate[]
+  weeks        PlanningWeek[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+/// Appartenance d'un utilisateur à une équipe.
+/// Une personne peut appartenir à plusieurs équipes (ex: IDE jour + IDE nuit) ;
+/// l'équipe `isPrimary = true` est l'équipe par défaut à l'ouverture de l'app.
+///
+/// Les champs de planning (trame, bloc, couleur) sont portés ici parce que
+/// chaque équipe a ses propres trames et ses propres libellés de bloc.
+/// Le profil alternance A/B (cycle, ancrage, phase, binôme) reste sur User :
+/// il est global à la personne et s'applique à toutes ses équipes.
+model UserTeam {
+  userId                  String
+  teamId                  String
+  /// Rôle de la personne DANS cette équipe (peut être plus élevé que User.role si besoin)
+  roleInTeam              UserRole @default(AGENT)
+  /// Équipe d'atterrissage par défaut à la connexion (une seule par user)
+  isPrimary               Boolean  @default(false)
+  /// Libellé du bloc/équipe interne (colonne noms dans la grille admin)
+  planningGroupLabel      String?
+  /// Couleur du bloc (#hex)
+  planningGroupColor      String?
+  /// Ordre d'affichage dans le groupe puis entre groupes
+  displayOrder            Int      @default(0)
+  /// Numéro de trame cyclique attribué dans cette équipe
+  planningTemplateNumber  Int?
+  /// Trame appliquée pendant l'état alternant A
+  planningTemplateNumberA Int?
+  /// Trame appliquée pendant l'état alternant B
+  planningTemplateNumberB Int?
+  /// Bloc/équipe pendant l'état A
+  planningGroupLabelA     String?
+  /// Bloc/équipe pendant l'état B
+  planningGroupLabelB     String?
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team                    Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@id([userId, teamId])
+  @@index([teamId])
 }
 
 model Skill {
@@ -206,7 +284,9 @@ model Availability {
 
 model PlanningWeek {
   id              String         @id @default(cuid())
-  weekStart       DateTime       @unique
+  /// Équipe à laquelle appartient cette semaine de planning (IDE jour, IDE nuit, ...)
+  teamId          String
+  weekStart       DateTime
   status          PlanningStatus @default(DRAFT)
   validatedAt     DateTime?
   validatedBy     String?
@@ -214,17 +294,32 @@ model PlanningWeek {
   validatedByName String?
   publishedAt     DateTime?
   publishedBy     String?
+  team            Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   assignments     Assignment[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+
+  @@unique([teamId, weekStart])
+  @@index([teamId])
 }
 
 model PlanningTemplate {
-  id        String                 @id @default(cuid())
-  number    Int                    @unique
-  entries   PlanningTemplateEntry[]
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
+  id         String                  @id @default(cuid())
+  /// Équipe propriétaire de la trame. Chaque équipe a ses propres numéros 1..N.
+  teamId     String
+  /// Numéro affiché (unique par équipe)
+  number     Int
+  /// Libellé libre (ex: "SMUR A", "Binome JM")
+  label      String
+  /// Durée du cycle en semaines (la trame contient cycleWeeks * 7 entrées)
+  cycleWeeks Int                     @default(52)
+  team       Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  entries    PlanningTemplateEntry[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([teamId, number])
+  @@index([teamId])
 }
 
 model PlanningTemplateEntry {
