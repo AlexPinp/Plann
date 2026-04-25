@@ -41,7 +41,7 @@ export default async function ParametresAdminPage({ params }: Props) {
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SETTINGS_LINKS.map((item) => {
-          const href = "href" in item ? item.href : adminTeamPath(team.slug, item.segment);
+          const href = adminTeamPath(team.slug, item.segment);
           return (
             <Link
               key={item.title}
