@@ -31,7 +31,7 @@ async function revalidatePlanningViews(teamSlug: string) {
   revalidatePath(workspacePath(teamSlug, "droits"));
   const teams = await getAllTeams();
   for (const t of teams) {
-    revalidatePath(workspacePath(t.slug, "organisation"));
+    revalidatePath(workspacePath(t.slug, "planification"));
   }
 }
 

@@ -10,15 +10,10 @@ import { adminTeamPath, revalidateTeamPlanningSurfaces } from "@/lib/routes";
 
 function parseCategory(raw: FormDataEntryValue | null): ShiftCategory {
   const value = String(raw ?? "");
-  if (
-    value === ShiftCategory.JOUR10 ||
-    value === ShiftCategory.JOUR12 ||
-    value === ShiftCategory.JOUR7_50 ||
-    value === ShiftCategory.NUIT
-  ) {
+  if (value === ShiftCategory.JOUR || value === ShiftCategory.NUIT) {
     return value;
   }
-  return ShiftCategory.JOUR10;
+  return ShiftCategory.JOUR;
 }
 
 function parseColor(raw: FormDataEntryValue | null): string {

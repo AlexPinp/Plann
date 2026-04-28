@@ -93,9 +93,7 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             >
               <option value="all">Toutes</option>
-              <option value={ShiftCategory.JOUR10}>JOUR10</option>
-              <option value={ShiftCategory.JOUR12}>JOUR12</option>
-              <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+              <option value={ShiftCategory.JOUR}>JOUR</option>
               <option value={ShiftCategory.NUIT}>NUIT</option>
             </select>
           </div>
@@ -213,9 +211,7 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
                     defaultValue={shift.category}
                     className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
                   >
-                    <option value={ShiftCategory.JOUR10}>JOUR10</option>
-                    <option value={ShiftCategory.JOUR12}>JOUR12</option>
-                    <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+                    <option value={ShiftCategory.JOUR}>JOUR</option>
                     <option value={ShiftCategory.NUIT}>NUIT</option>
                   </select>
                 </td>
@@ -255,7 +251,10 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
 
       <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Nouveau code horaire</h2>
-        <form action={createShiftCode} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <form
+          action={createShiftCode}
+          className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-[110px_minmax(220px,1fr)_110px_150px_150px_120px_auto] xl:items-end"
+        >
           <div>
             <label htmlFor="code" className="text-xs font-medium text-zinc-600">
               Code
@@ -269,7 +268,7 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             />
           </div>
-          <div className="lg:col-span-2">
+          <div>
             <label htmlFor="label" className="text-xs font-medium text-zinc-600">
               Nom
             </label>
@@ -300,12 +299,10 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
             <select
               id="category"
               name="category"
-              defaultValue={ShiftCategory.JOUR10}
+              defaultValue={ShiftCategory.JOUR}
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             >
-              <option value={ShiftCategory.JOUR10}>JOUR10</option>
-              <option value={ShiftCategory.JOUR12}>JOUR12</option>
-              <option value={ShiftCategory.JOUR7_50}>JOUR7_50</option>
+              <option value={ShiftCategory.JOUR}>JOUR</option>
               <option value={ShiftCategory.NUIT}>NUIT</option>
             </select>
           </div>
@@ -333,10 +330,10 @@ export default async function AdminShiftCodesPage({ searchParams }: Props) {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-6">
+          <div className="sm:col-span-2 xl:col-span-1">
             <button
               type="submit"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 xl:w-auto"
             >
               Créer le code
             </button>

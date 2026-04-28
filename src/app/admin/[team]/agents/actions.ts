@@ -41,7 +41,7 @@ async function revalidateAgentPages(teamSlug: string, id?: string) {
   revalidatePath(workspacePath(teamSlug, "droits"));
   const teams = await getAllTeams();
   for (const t of teams) {
-    revalidatePath(workspacePath(t.slug, "organisation"));
+    revalidatePath(workspacePath(t.slug, "planification"));
   }
 }
 

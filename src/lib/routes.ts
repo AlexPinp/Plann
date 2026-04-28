@@ -12,7 +12,7 @@ export function adminTeamPath(teamSlug: string, segment: string): string {
 export function revalidateTeamPlanningSurfaces(teamSlug: string, revalidatePath: (path: string) => void) {
   revalidatePath(workspacePath(teamSlug, "planning-moi"));
   revalidatePath(workspacePath(teamSlug, "planning-equipe"));
-  revalidatePath(workspacePath(teamSlug, "organisation"));
+  revalidatePath(workspacePath(teamSlug, "planification"));
   revalidatePath(adminTeamPath(teamSlug, "planning"));
   revalidatePath(workspacePath(teamSlug, "planning/admin"));
   revalidatePath(workspacePath(teamSlug, "droits"));

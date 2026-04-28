@@ -29,6 +29,8 @@ import {
   type PlanningCommentType,
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
+import { ExportPdfButton } from "../organisation/ExportPdfButton";
+import { GoogleCalendarExportButton } from "./GoogleCalendarExportButton";
 
 const MONTH_OPTIONS = [
   { value: 1, label: "Janvier" },
@@ -210,9 +212,71 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
       : null;
 
   const blanks = firstDow === 0 ? 6 : firstDow - 1;
+  const googleCalendarEvents: Array<{
+    id: string;
+    date: string;
+    endDate: string;
+    startsAt: string;
+    endsAt: string;
+    code: string;
+    label: string;
+    teamLabel: string;
+  }> = [];
+
+  for (let dayNum = 1; dayNum <= lastDay; dayNum++) {
+    const key = `${y}-${String(m).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+    const dayAssignments = byDate.get(key) ?? [];
+    const date = new Date(Date.UTC(y, m - 1, dayNum, 12, 0, 0));
+    const effectiveTemplateNumber = getEffectivePlanningConfigForUserTeam(
+      timing,
+      cfg,
+      date,
+    ).templateNumber;
+    const cycleW = effectiveTemplateNumber
+      ? cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS
+      : 6;
+    const offset = getTemplateDayOffsetForCycle(date, cycleW);
+    const templateShiftId = effectiveTemplateNumber
+      ? templateShiftByNumberAndOffset.get(`${effectiveTemplateNumber}|${offset}`)
+      : undefined;
+    const templateShift = templateShiftId ? shiftById.get(templateShiftId) : undefined;
+
+    const dayValidated = isDayValidated(dayNum);
+    let displayAssignments: { id: string; shiftType: NonNullable<typeof templateShift> }[];
+    if (isStaff || dayValidated) {
+      displayAssignments =
+        dayAssignments.length > 0
+          ? dayAssignments
+          : templateShift
+            ? [{ id: `tpl-${key}`, shiftType: templateShift }]
+            : [];
+    } else {
+      displayAssignments = templateShift
+        ? [{ id: `tpl-${key}`, shiftType: templateShift }]
+        : [];
+    }
+
+    for (const assignment of displayAssignments) {
+      const shift = assignment.shiftType;
+      const endDate =
+        shift.endsAt <= shift.startsAt
+          ? `${new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCMonth() + 1).padStart(2, "0")}-${String(new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCDate()).padStart(2, "0")}`
+          : key;
+      googleCalendarEvents.push({
+        id: `${assignment.id}-${key}`,
+        date: key,
+        endDate,
+        startsAt: shift.startsAt,
+        endsAt: shift.endsAt,
+        code: shift.code,
+        label: shift.label,
+        teamLabel: team.label,
+      });
+    }
+  }
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 p-4 md:p-8">
+    <main className="mx-auto w-full max-w-3xl flex-1 p-4 md:p-8 print:max-w-none print:p-0">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Mon planning</h1>
@@ -282,10 +346,14 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
               Aller
             </button>
           </form>
+          <GoogleCalendarExportButton events={googleCalendarEvents} />
+          <div className="print:hidden">
+            <ExportPdfButton />
+          </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
         <div className="grid grid-cols-7 border-b border-zinc-200 bg-zinc-50">
           {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
             <div key={i} className="px-1 py-2 text-center text-xs font-semibold text-zinc-500">

@@ -21,9 +21,9 @@ function tabsForTeam(teamSlug: string): Tab[] {
       match: (path) => path.startsWith(p("planning-equipe")),
     },
     {
-      segment: "organisation",
-      label: "Organisation",
-      match: (path) => path.startsWith(p("organisation")),
+      segment: "planification",
+      label: "Planification",
+      match: (path) => path.startsWith(p("planification")),
     },
     {
       segment: "demandes",

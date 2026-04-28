@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getAllTeams, getTeamBySlug, requireTeamMembership } from "@/lib/team";
 import { workspacePath } from "@/lib/routes";
 import { PlanningStatus, TeamJob, TeamRhythm } from "@/generated/prisma/enums";
+import { ExportPdfButton } from "./ExportPdfButton";
 
 type Props = {
   params: Promise<{ team: string }>;
@@ -42,26 +43,68 @@ function shiftWeekUtc(monday: Date, deltaWeeks: number): Date {
   return startOfIsoWeekMondayUtc(d);
 }
 
-function compareRows(
-  a: { rhythm: TeamRhythm; job: TeamJob; shiftCode: string },
-  b: { rhythm: TeamRhythm; job: TeamJob; shiftCode: string },
-): number {
-  const rA = a.rhythm === TeamRhythm.JOUR ? 0 : 1;
-  const rB = b.rhythm === TeamRhythm.JOUR ? 0 : 1;
-  if (rA !== rB) return rA - rB;
-  const jA = a.job === TeamJob.IDE ? 0 : 1;
-  const jB = b.job === TeamJob.IDE ? 0 : 1;
-  if (jA !== jB) return jA - jB;
-  return a.shiftCode.localeCompare(b.shiftCode, "fr", { numeric: true });
-}
-
 function jobShort(j: TeamJob): string {
   return j === TeamJob.IDE ? "IDE" : "AS";
 }
 
-function postLabel(job: TeamJob, shiftCode: string): string {
-  const code = shiftCode.trim() || "—";
-  return `${jobShort(job)} ${code}`;
+type TemplateRow = {
+  id: string;
+  sector: "CMC" | "IOA" | "CC" | "SAUV" | "UDOM";
+  rhythm: TeamRhythm;
+  job: TeamJob;
+  label: string;
+  acceptedCodes: string[];
+};
+
+const TEMPLATE_ROWS: TemplateRow[] = [
+  { id: "cmc-jour-ide-jm1", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JM1", acceptedCodes: ["JM1"] },
+  { id: "cmc-jour-as-jm1", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JM1", acceptedCodes: ["JM1"] },
+  { id: "cmc-jour-ide-jm2", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JM2", acceptedCodes: ["JM2"] },
+  { id: "cmc-jour-as-jm2", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JM2", acceptedCodes: ["JM2"] },
+  { id: "cmc-jour-ide-jm3", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JM3", acceptedCodes: ["JM3"] },
+  { id: "cmc-jour-as-jm3", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JM3", acceptedCodes: ["JM3"] },
+  { id: "cmc-jour-ide-jm4", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JM4", acceptedCodes: ["JM4"] },
+  { id: "cmc-jour-as-jc", sector: "CMC", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS course JC", acceptedCodes: ["JC", "JCD"] },
+  { id: "cmc-nuit-ide-nm1", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NM1", acceptedCodes: ["NM1"] },
+  { id: "cmc-nuit-as-nm1", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NM1", acceptedCodes: ["NM1"] },
+  { id: "cmc-nuit-ide-nm2", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NM2", acceptedCodes: ["NM2"] },
+  { id: "cmc-nuit-as-nm2", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NM2", acceptedCodes: ["NM2"] },
+  { id: "cmc-nuit-ide-nm3", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NM3", acceptedCodes: ["NM3"] },
+  { id: "cmc-nuit-as-nm3", sector: "CMC", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NM3", acceptedCodes: ["NM3"] },
+  { id: "ioa-jour-ide-jo1", sector: "IOA", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JO1", acceptedCodes: ["JO1"] },
+  { id: "ioa-jour-ide-jo2", sector: "IOA", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JO2", acceptedCodes: ["JO2"] },
+  { id: "ioa-jour-as-ioa", sector: "IOA", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS IOA", acceptedCodes: ["IOA"] },
+  { id: "ioa-jour-ide-jcd", sector: "IOA", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JCD", acceptedCodes: ["JCD"] },
+  { id: "ioa-nuit-ide-no1", sector: "IOA", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NO1", acceptedCodes: ["NO1"] },
+  { id: "ioa-nuit-ide-no2", sector: "IOA", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NO2", acceptedCodes: ["NO2"] },
+  { id: "cc-jour-ide-jg1", sector: "CC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JG1", acceptedCodes: ["JG1"] },
+  { id: "cc-jour-ide-jg2", sector: "CC", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JG2", acceptedCodes: ["JG2"] },
+  { id: "cc-jour-as-jg", sector: "CC", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JG", acceptedCodes: ["JG", "JG1", "JG2"] },
+  { id: "cc-nuit-ide-ng", sector: "CC", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NG", acceptedCodes: ["NG"] },
+  { id: "cc-nuit-as-ng", sector: "CC", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NG", acceptedCodes: ["NG"] },
+  { id: "sauv-jour-ide-js1", sector: "SAUV", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JS", acceptedCodes: ["JS"] },
+  { id: "sauv-jour-as-js", sector: "SAUV", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JS", acceptedCodes: ["JS"] },
+  { id: "sauv-nuit-ide-ns", sector: "SAUV", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NS", acceptedCodes: ["NS"] },
+  { id: "sauv-nuit-as-ns", sector: "SAUV", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NS", acceptedCodes: ["NS"] },
+  { id: "udom-jour-ide-jh1", sector: "UDOM", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JH1", acceptedCodes: ["JH1"] },
+  { id: "udom-jour-as-jh1", sector: "UDOM", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JH1", acceptedCodes: ["JH1"] },
+  { id: "udom-jour-ide-jh2", sector: "UDOM", rhythm: TeamRhythm.JOUR, job: TeamJob.IDE, label: "IDE JH2", acceptedCodes: ["JH2"] },
+  { id: "udom-jour-as-jh2", sector: "UDOM", rhythm: TeamRhythm.JOUR, job: TeamJob.AS, label: "AS JH2", acceptedCodes: ["JH2"] },
+  { id: "udom-nuit-ide-nh", sector: "UDOM", rhythm: TeamRhythm.NUIT, job: TeamJob.IDE, label: "IDE NH", acceptedCodes: ["NH"] },
+  { id: "udom-nuit-as-nh", sector: "UDOM", rhythm: TeamRhythm.NUIT, job: TeamJob.AS, label: "AS NH", acceptedCodes: ["NH"] },
+];
+
+function normalizeShiftCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
+function inferSectorFromShiftCode(code: string): TemplateRow["sector"] | null {
+  const c = normalizeShiftCode(code);
+  if (/^(JM|NM|JC)/.test(c)) return "CMC";
+  if (/^(JG|NG)/.test(c)) return "CC";
+  if (/^(JS|NS)/.test(c)) return "SAUV";
+  if (/^(JH|NH)/.test(c)) return "UDOM";
+  return null;
 }
 
 export default async function OrganisationWeekPage({ params, searchParams }: Props) {
@@ -89,9 +132,8 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     const d = new Date(monday);
     d.setUTCDate(d.getUTCDate() + i);
     const ymd = formatUtcYmd(d);
-    const label = format(d, "EEE d MMM", { locale: fr });
     const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
-    return { d, ymd, label, isWeekend };
+    return { d, ymd, isWeekend };
   });
 
   const teamIds = teams.map((t) => t.id);
@@ -123,18 +165,8 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
           include: { user: true, shiftType: true },
         });
 
-  type RowKey = string;
-  const rowMeta = new Map<
-    RowKey,
-    {
-      rhythm: TeamRhythm;
-      job: TeamJob;
-      shiftTypeId: string;
-      shiftCode: string;
-    }
-  >();
-
   const namesByRowDay = new Map<string, string[]>();
+  const dynamicRowsByKey = new Map<string, { job: TeamJob; rhythm: TeamRhythm; code: string }>();
 
   for (const a of assignments) {
     const teamId = teamIdByWeekId.get(a.planningWeekId);
@@ -142,45 +174,54 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     const team = teamById.get(teamId);
     if (!team) continue;
 
-    const shiftCode = a.shiftType.code.trim() || a.shiftType.label;
-    const rowKey: RowKey = [team.rhythm, team.job, a.shiftType.id].join("\x01");
+    const shiftCode = normalizeShiftCode(a.shiftType.code.trim() || a.shiftType.label);
+    const dk = formatUtcYmd(a.date);
+    const inferredSector = inferSectorFromShiftCode(shiftCode);
+    const templateMatch = TEMPLATE_ROWS.find(
+      (row) => row.job === team.job && row.rhythm === team.rhythm && row.acceptedCodes.includes(shiftCode),
+    );
 
-    if (!rowMeta.has(rowKey)) {
-      rowMeta.set(rowKey, {
-        rhythm: team.rhythm,
-        job: team.job,
-        shiftTypeId: a.shiftType.id,
-        shiftCode,
-      });
+    if (templateMatch) {
+      const cellKey = `${templateMatch.id}|${dk}`;
+      const list = namesByRowDay.get(cellKey) ?? [];
+      const name = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
+      if (!list.includes(name)) list.push(name);
+      namesByRowDay.set(cellKey, list);
+      continue;
     }
 
-    const dk = formatUtcYmd(a.date);
-    const cellKey = `${rowKey}|${dk}`;
-    const name = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
-    const list = namesByRowDay.get(cellKey) ?? [];
-    if (!list.includes(name)) list.push(name);
-    namesByRowDay.set(cellKey, list);
+    const fallbackKey = `${jobShort(team.job)} ${shiftCode}`;
+    if (!dynamicRowsByKey.has(fallbackKey)) {
+      dynamicRowsByKey.set(fallbackKey, { job: team.job, rhythm: team.rhythm, code: shiftCode });
+    }
   }
 
-  const rows = Array.from(rowMeta.entries())
-    .map(([key, meta]) => ({ key, ...meta }))
-    .sort((a, b) => compareRows(a, b));
+  const rows = TEMPLATE_ROWS;
+  const sectorRowSpans = rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.sector] = (acc[row.sector] ?? 0) + 1;
+    return acc;
+  }, {});
+  const periodRowSpans = rows.reduce<Record<string, number>>((acc, row) => {
+    const key = `${row.sector}|${row.rhythm}`;
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+  const seenSector = new Set<string>();
+  const seenPeriod = new Set<string>();
 
-  const orgPath = workspacePath(teamCtx.slug, "organisation");
+  const orgPath = workspacePath(teamCtx.slug, "planification");
   const prevWeek = shiftWeekUtc(weekStart, -1);
   const nextWeek = shiftWeekUtc(weekStart, 1);
   const weekRangeLabel = `${format(monday, "d MMM", { locale: fr })} – ${format(sunday, "d MMM yyyy", { locale: fr })}`;
 
   return (
-    <main className="mx-auto w-full max-w-[98vw] flex-1 p-3 sm:p-4 md:p-6">
+    <main className="mx-auto w-full max-w-[99.5vw] flex-1 p-2 sm:p-3 md:p-4 print:max-w-none print:p-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Organisation</h1>
-          <p className="text-sm text-zinc-600">
-            Lignes triées par rythme (jour / nuit) et poste — seul le poste est affiché.
-          </p>
+          <h1 className="text-xl font-semibold text-zinc-900">Planification</h1>
+          <p className="hidden text-sm text-zinc-700 print:block">Semaine : {weekRangeLabel}</p>
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto print:hidden">
           <Link
             href={`${orgPath}?week=${formatUtcYmd(prevWeek)}`}
             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
@@ -214,93 +255,107 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
               Afficher
             </button>
           </form>
+          <div className="print:hidden">
+            <ExportPdfButton />
+          </div>
         </div>
       </div>
 
       {provisionalFromDraft ? (
-        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">
           Au moins une équipe est encore en brouillon pour cette semaine — les noms affichés sont ceux du planning tel
           qu’enregistré. Validez chaque équipe en administration pour une vue officielle.
         </p>
       ) : null}
 
-      {rows.length === 0 ? (
-        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-          Aucune affectation sur la semaine pour les équipes concernées. Ouvrez le planning en administration et
-          renseignez les cases (agent + code horaire), ou vérifiez la semaine sélectionnée.
-        </p>
-      ) : (
-        <div className="max-h-[85vh] overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm">
-          <table className="min-w-max border-collapse text-xs">
-            <thead>
-              <tr className="bg-zinc-100">
+      <div className="max-h-[85vh] overflow-auto print:max-h-none print:overflow-visible print:[&_*.sticky]:!static">
+        <div className="mx-auto w-fit rounded-lg border border-zinc-300 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
+          <table className="mx-auto min-w-max border-collapse text-xs">
+          <thead>
+            <tr className="bg-zinc-100">
+              <th className="sticky left-0 top-0 z-40 min-w-[56px] border border-zinc-300 bg-zinc-100 px-1.5 py-2 text-center text-[10px] font-bold uppercase text-zinc-800">
+                Secteur
+              </th>
+              <th className="sticky left-[56px] top-0 z-40 min-w-[52px] border border-zinc-300 bg-zinc-100 px-1.5 py-2 text-center text-[10px] font-bold uppercase text-zinc-800">
+                Rythme
+              </th>
+              <th className="sticky left-[108px] top-0 z-40 min-w-[98px] border border-zinc-300 bg-zinc-100 px-1 py-2 text-left text-[10px] font-bold uppercase text-zinc-800">
+                Poste
+              </th>
+              {weekDays.map((day) => (
                 <th
-                  rowSpan={2}
-                  className="sticky left-0 top-0 z-40 min-w-[120px] border border-zinc-300 bg-zinc-100 px-1.5 py-2 text-left text-[10px] font-bold uppercase leading-tight text-zinc-800"
+                  key={day.ymd}
+                  className={[
+                    "sticky top-0 z-30 min-w-[86px] border border-zinc-300 px-1.5 py-2 text-center text-[11px] font-semibold text-zinc-800",
+                    day.isWeekend ? "bg-zinc-200 text-zinc-600" : "bg-zinc-100",
+                  ].join(" ")}
                 >
-                  Poste
+                  {format(day.d, "dd/MM")}
                 </th>
-                {weekDays.map((day) => (
-                  <th
-                    key={day.ymd}
-                    className={[
-                      "sticky top-0 z-30 min-w-[104px] border border-zinc-300 px-1.5 py-2 text-center font-semibold capitalize",
-                      day.isWeekend ? "bg-zinc-200 text-zinc-600" : "bg-zinc-100 text-zinc-800",
-                    ].join(" ")}
-                  >
-                    {day.label}
-                  </th>
-                ))}
-              </tr>
-              <tr className="bg-zinc-50">
-                {weekDays.map((day) => (
-                  <th
-                    key={`${day.ymd}-sub`}
-                    className={[
-                      "sticky top-[40px] z-30 border border-zinc-300 px-1 py-1 text-center text-[10px] font-medium text-zinc-500",
-                      day.isWeekend ? "bg-zinc-200" : "bg-zinc-50",
-                    ].join(" ")}
-                  >
-                    {format(day.d, "yyyy-MM-dd")}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                return (
-                  <tr key={row.key} className="hover:bg-zinc-50/80">
-                    <td className="sticky left-0 z-20 border border-zinc-200 bg-white px-1.5 py-1 align-middle text-[11px] font-semibold text-zinc-900">
-                      {postLabel(row.job, row.shiftCode)}
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const periodKey = `${row.sector}|${row.rhythm}`;
+              const showSector = !seenSector.has(row.sector);
+              const showPeriod = !seenPeriod.has(periodKey);
+              if (showSector) seenSector.add(row.sector);
+              if (showPeriod) seenPeriod.add(periodKey);
+
+              return (
+                <tr key={row.id} className="hover:bg-zinc-50/80">
+                  {showSector ? (
+                    <td
+                      rowSpan={sectorRowSpans[row.sector]}
+                      className="sticky left-0 z-20 border border-zinc-300 bg-zinc-100 px-1 py-1 text-center text-[11px] font-bold tracking-wide text-zinc-900 [writing-mode:vertical-rl] [text-orientation:mixed]"
+                    >
+                      {row.sector}
                     </td>
-                    {weekDays.map((day) => {
-                      const cellKey = `${row.key}|${day.ymd}`;
-                      const names = (namesByRowDay.get(cellKey) ?? []).slice().sort((a, b) =>
-                        a.localeCompare(b, "fr"),
-                      );
-                      return (
-                        <td
-                          key={`${row.key}-${day.ymd}`}
-                          className={[
-                            "border border-zinc-200 px-1.5 py-1 align-top text-[11px] leading-snug text-zinc-900",
-                            day.isWeekend ? "bg-zinc-50/90" : "",
-                          ].join(" ")}
-                        >
-                          {names.length === 0 ? (
-                            <span className="text-[10px] text-zinc-400">—</span>
-                          ) : (
-                            names.join(", ")
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
+                  ) : null}
+                  {showPeriod ? (
+                    <td
+                      rowSpan={periodRowSpans[periodKey]}
+                      className="sticky left-[56px] z-20 border border-zinc-300 bg-zinc-50 px-1 py-1 text-center text-[10px] font-semibold uppercase text-zinc-700 [writing-mode:vertical-rl] [text-orientation:mixed]"
+                    >
+                      {row.rhythm}
+                    </td>
+                  ) : null}
+                  <td className="sticky left-[108px] z-20 border border-zinc-300 bg-white px-1 py-1 align-middle text-[11px] font-semibold text-zinc-900">
+                    {row.label}
+                  </td>
+                  {weekDays.map((day) => {
+                    const cellKey = `${row.id}|${day.ymd}`;
+                    const names = (namesByRowDay.get(cellKey) ?? []).slice().sort((a, b) => a.localeCompare(b, "fr"));
+                    return (
+                      <td
+                        key={`${row.id}-${day.ymd}`}
+                        className={[
+                          "border border-zinc-300 px-1.5 py-1 align-middle text-center text-[11px] font-semibold leading-snug text-zinc-900",
+                          day.isWeekend ? "bg-zinc-50/90" : "",
+                        ].join(" ")}
+                      >
+                        {names.length === 0 ? <span className="text-[10px] text-zinc-400"> </span> : names.join(", ")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {dynamicRowsByKey.size > 0 ? (
+              <tr>
+                <td colSpan={10} className="border border-zinc-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+                  Codes détectés hors trame fixe :{" "}
+                  {Array.from(dynamicRowsByKey.keys())
+                    .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }))
+                    .join(", ")}
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
           </table>
         </div>
-      )}
+      </div>
     </main>
   );
 }

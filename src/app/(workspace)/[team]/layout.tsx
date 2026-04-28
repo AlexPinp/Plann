@@ -24,7 +24,7 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/95 backdrop-blur print:hidden">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4 md:px-6">
           <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
             <span className="text-sm font-bold text-zinc-900">Planner SAU</span>
@@ -45,6 +45,29 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
                 Administration
               </Link>
             )}
+            <Link
+              href={`/${teamSlug}/parametres`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+              aria-label="Ouvrir mes paramètres"
+              title="Paramètres"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                className="h-4 w-4"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317a1.724 1.724 0 0 1 3.35 0 1.724 1.724 0 0 0 2.573 1.066 1.724 1.724 0 0 1 2.9 1.673 1.724 1.724 0 0 0 .829 2.54 1.724 1.724 0 0 1 0 2.808 1.724 1.724 0 0 0-.829 2.54 1.724 1.724 0 0 1-2.9 1.673 1.724 1.724 0 0 0-2.573 1.066 1.724 1.724 0 0 1-3.35 0 1.724 1.724 0 0 0-2.573-1.066 1.724 1.724 0 0 1-2.9-1.673 1.724 1.724 0 0 0-.829-2.54 1.724 1.724 0 0 1 0-2.808 1.724 1.724 0 0 0 .829-2.54 1.724 1.724 0 0 1 2.9-1.673 1.724 1.724 0 0 0 2.573-1.066Z"
+                />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

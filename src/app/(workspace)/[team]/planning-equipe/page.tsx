@@ -30,6 +30,7 @@ import {
   type PlanningCommentType,
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
+import { ExportPdfButton } from "../organisation/ExportPdfButton";
 
 const DOW_SHORT = ["D", "L", "M", "M", "J", "V", "S"];
 const MONTH_OPTIONS = [
@@ -218,7 +219,7 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
   const equipePath = workspacePath(team.slug, "planning-equipe");
 
   return (
-    <main className="mx-auto w-full max-w-[98vw] flex-1 p-3 sm:p-4 md:p-6">
+    <main className="mx-auto w-full max-w-[98vw] flex-1 p-3 sm:p-4 md:p-6 print:max-w-none print:p-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Planning equipe</h1>
@@ -284,10 +285,13 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
               Aller
             </button>
           </form>
+          <div className="print:hidden">
+            <ExportPdfButton />
+          </div>
         </div>
       </div>
 
-      <div className="max-h-[85vh] overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm">
+      <div className="max-h-[85vh] overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm print:max-h-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none print:[&_*.sticky]:!static">
         <table className="min-w-max border-collapse text-[11px]">
           <thead>
             <tr className="bg-zinc-100">

@@ -24,9 +24,7 @@ enum UserRole {
 }
 
 enum ShiftCategory {
-  JOUR10
-  JOUR12
-  JOUR7_50
+  JOUR
   NUIT
 }
 
