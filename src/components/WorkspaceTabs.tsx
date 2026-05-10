@@ -18,7 +18,7 @@ function tabsForTeam(teamSlug: string): Tab[] {
     {
       segment: "planning-equipe",
       label: "Planning equipe",
-      match: (path) => path.startsWith(p("planning-equipe")),
+      match: (path) => path.startsWith(p("planning-equipe")) || path.startsWith(p("planning/")),
     },
     {
       segment: "planification",
@@ -51,18 +51,17 @@ export function WorkspaceTabs({
 
   return (
     <nav
-      className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-zinc-200 bg-zinc-50/80 px-3 py-1.5 sm:px-4 md:px-6"
+      className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 border-t border-[var(--border)] bg-white px-3 py-2 sm:px-4 md:px-6"
       aria-label="Navigation principale"
     >
-      {showSwitcher ? (
-        <div className="flex w-full shrink-0 items-center border-b border-zinc-200/80 pb-2 sm:mr-2 sm:w-auto sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3">
-          <TeamSwitcher teams={switcherTeams!} currentSlug={teamSlug} />
-        </div>
-      ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pb-0.5">
+      <div className="min-w-0" aria-hidden="true" />
+      <div className="flex min-w-0 justify-center gap-1 overflow-x-auto pb-0.5">
         {agentTabs.map((tab) => (
           <TabLink key={tab.segment} href={workspacePath(teamSlug, tab.segment)} tab={tab} pathname={pathname} />
         ))}
+      </div>
+      <div className="flex min-w-0 shrink-0 justify-end">
+        {showSwitcher ? <TeamSwitcher teams={switcherTeams!} currentSlug={teamSlug} /> : null}
       </div>
     </nav>
   );
@@ -84,14 +83,14 @@ function TabLink({
     <Link
       href={href}
       className={[
-        "-mb-px shrink-0 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm md:px-4",
+        "shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:text-sm",
         active
           ? accent
-            ? "border-emerald-600 text-emerald-700"
-            : "border-zinc-900 text-zinc-900"
+            ? "bg-emerald-50 text-emerald-700"
+            : "bg-[var(--surface-soft)] text-[var(--text)]"
           : accent
-            ? "border-transparent text-emerald-600 hover:border-emerald-300 hover:text-emerald-700"
-            : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-800",
+            ? "text-emerald-700 hover:bg-emerald-50"
+            : "text-[var(--text-muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text)]",
       ].join(" ")}
     >
       {tab.label}

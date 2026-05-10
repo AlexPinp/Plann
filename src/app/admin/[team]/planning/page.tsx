@@ -17,11 +17,22 @@ import { prisma } from "@/lib/prisma";
 import { PlanningStatus } from "@/generated/prisma/enums";
 import { getSessionPrismaUser } from "@/lib/current-user";
 import { findRolling7DayHoursViolations } from "@/lib/planning-rolling-compliance";
+import { collectSectorCompetenceViolations } from "@/lib/planning-sector-competence";
 import { canEditPlanningAndStaff, requirePlanningAndStaffAccess } from "@/lib/user-roles";
 import { getTeamBySlug } from "@/lib/team";
 import { adminTeamPath, workspacePath } from "@/lib/routes";
 import { PlanningMonthGrid } from "@/app/(workspace)/[team]/planning/admin/PlanningMonthGrid";
 import { validatePlanningMonth, unvalidatePlanningMonth } from "@/app/(workspace)/[team]/planning/admin/actions";
+import { MonthNavigator } from "@/components/MonthNavigator";
+
+const SHIFT_TYPE_SELECT = {
+  id: true,
+  code: true,
+  label: true,
+  color: true,
+  startsAt: true,
+  endsAt: true,
+} as const;
 
 const DOW_FR = ["D", "L", "M", "M", "J", "V", "S"];
 const MONTH_OPTIONS = [
@@ -97,8 +108,14 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
   const rangeEnd = new Date(Date.UTC(y, m - 1, lastDay, 23, 59, 59, 999));
 
   const members = await prisma.userTeam.findMany({
-    where: { teamId: team.id, user: { active: true } },
-    include: { user: true },
+    where: { teamId: team.id, user: { active: true }, showInAdminPlanning: true },
+    include: {
+      user: {
+        include: {
+          skills: { include: { skill: true } },
+        },
+      },
+    },
   });
 
   const memberUserIds = members.map((mem) => mem.userId);
@@ -110,9 +127,13 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
         userId: { not: null },
         planningWeek: { teamId: team.id },
       },
-      include: { shiftType: true },
+      include: { shiftType: { select: SHIFT_TYPE_SELECT } },
     }),
-    prisma.shiftType.findMany({ orderBy: { code: "asc" } }),
+    prisma.shiftType.findMany({
+      where: { teamId: team.id },
+      select: SHIFT_TYPE_SELECT,
+      orderBy: { code: "asc" },
+    }),
     prisma.planningComment.findMany({
       where: {
         userId: { in: memberUserIds },
@@ -264,6 +285,8 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
     code: s.code,
     color: s.color,
     label: s.label,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
   }));
 
   const prev = addMonths(y, m, -1);
@@ -276,8 +299,10 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
   };
   const templateShiftByNumberAndOffset: Record<string, string> = {};
   const cycleWeeksByTemplateNumber = new Map<number, number>();
+  const cycleStartDateByTemplateNumber = new Map<number, Date | null>();
   for (const template of templates) {
     cycleWeeksByTemplateNumber.set(template.number, normalizeTemplateCycleWeeks(template.cycleWeeks));
+    cycleStartDateByTemplateNumber.set(template.number, template.cycleStartDate);
     for (const entry of template.entries) {
       if (!entry.shiftTypeId) continue;
       templateShiftByNumberAndOffset[`${template.number}|${entry.dayOffset}`] = entry.shiftTypeId;
@@ -294,7 +319,8 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
       const effectiveTemplateNumber = getEffectivePlanningConfigForUserTeam(timing, cfg, date).templateNumber;
       if (!effectiveTemplateNumber) continue;
       const cycleW = cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS;
-      const offset = getTemplateDayOffsetForCycle(date, cycleW);
+      const cycleStart = cycleStartDateByTemplateNumber.get(effectiveTemplateNumber) ?? null;
+      const offset = getTemplateDayOffsetForCycle(date, cycleW, cycleStart);
       const shiftTypeId = templateShiftByNumberAndOffset[`${effectiveTemplateNumber}|${offset}`];
       if (shiftTypeId) templateShiftByUserAndDate[`${u.id}|${day.key}`] = shiftTypeId;
     }
@@ -329,6 +355,22 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
       })
     : [];
 
+  const shiftIdToCode = new Map(shifts.map((s) => [s.id, s.code]));
+  const sectorCompetenceViolations = canEditPlanningAndStaff(viewer?.role)
+    ? collectSectorCompetenceViolations({
+        days,
+        members: sortedMembers.map((m) => ({
+          userId: m.userId,
+          lastName: m.user.lastName,
+          firstName: m.user.firstName,
+          skillNames: m.user.skills.map((us) => us.skill.name),
+        })),
+        cellShiftByKey,
+        templateShiftByUserAndDate,
+        shiftIdToCode,
+      })
+    : [];
+
   const adminPlanningPath = adminTeamPath(team.slug, "planning");
 
   return (
@@ -340,98 +382,79 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
             Version de travail
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`${adminPlanningPath}?year=${prev.y}&month=${prev.m}&rowOrder=${rowOrder}`}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Mois précédent
-          </Link>
-          <Link
-            href={`${adminPlanningPath}?year=${next.y}&month=${next.m}&rowOrder=${rowOrder}`}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Mois suivant
-          </Link>
-          <Link
-            href={workspacePath(team.slug, "planning-equipe")}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50"
-          >
-            Planning équipe
-          </Link>
-          <form action={adminPlanningPath} method="get" className="ml-1 flex flex-wrap items-center gap-1.5">
-            <select
-              name="month"
-              defaultValue={String(m)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700"
-            >
-              {MONTH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <select
-              name="year"
-              defaultValue={String(y)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700"
-            >
-              {yearOptions.map((yy) => (
-                <option key={yy} value={yy}>
-                  {yy}
-                </option>
-              ))}
-            </select>
-            <select
-              name="rowOrder"
-              defaultValue={rowOrder}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700"
-            >
-              <option value="team">Equipe</option>
-              <option value="template">N° trame</option>
-              <option value="alpha">Ordre alphabetique</option>
-            </select>
-            <button
-              type="submit"
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Aller
-            </button>
-          </form>
-          {allValidated ? (
-            <div className="ml-1 flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-1">
-              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Valide</span>
-              <form action={unvalidatePlanningMonth}>
-                <input type="hidden" name="teamSlug" value={team.slug} />
+        <MonthNavigator
+          basePath={adminPlanningPath}
+          monthLabel={monthLabel}
+          currentMonth={m}
+          currentYear={y}
+          prev={prev}
+          next={next}
+          monthOptions={MONTH_OPTIONS}
+          yearOptions={yearOptions}
+          extraQueryParams={{ rowOrder }}
+          actions={
+            <>
+              <form action={adminPlanningPath} method="get" className="ml-1 flex flex-wrap items-center gap-1.5">
                 <input type="hidden" name="year" value={y} />
                 <input type="hidden" name="month" value={m} />
+                <select
+                  name="rowOrder"
+                  defaultValue={rowOrder}
+                  className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)]"
+                >
+                  <option value="team">Equipe</option>
+                  <option value="template">N° trame</option>
+                  <option value="alpha">Ordre alphabetique</option>
+                </select>
                 <button
                   type="submit"
-                  className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                  title="Repasser ce mois en brouillon"
+                  className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
                 >
-                  Brouillon
+                  Tri
                 </button>
               </form>
-            </div>
-          ) : (
-            <div className="ml-1 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Brouillon</span>
-              <form action={validatePlanningMonth}>
-                <input type="hidden" name="teamSlug" value={team.slug} />
-                <input type="hidden" name="year" value={y} />
-                <input type="hidden" name="month" value={m} />
-                <button
-                  type="submit"
-                  className="rounded-md border border-green-300 bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700"
-                  title="Valider et publier le planning de ce mois aux agents"
-                >
-                  Valider & publier
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
+              <Link
+                href={workspacePath(team.slug, "planning-equipe")}
+                className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+              >
+                Planning equipe
+              </Link>
+              {allValidated ? (
+                <div className="ml-1 flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-1">
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Valide</span>
+                  <form action={unvalidatePlanningMonth}>
+                    <input type="hidden" name="teamSlug" value={team.slug} />
+                    <input type="hidden" name="year" value={y} />
+                    <input type="hidden" name="month" value={m} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                      title="Repasser ce mois en brouillon"
+                    >
+                      Brouillon
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div className="ml-1 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Brouillon</span>
+                  <form action={validatePlanningMonth}>
+                    <input type="hidden" name="teamSlug" value={team.slug} />
+                    <input type="hidden" name="year" value={y} />
+                    <input type="hidden" name="month" value={m} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-green-300 bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700"
+                      title="Valider et publier le planning de ce mois aux agents"
+                    >
+                      Valider & publier
+                    </button>
+                  </form>
+                </div>
+              )}
+            </>
+          }
+        />
       </div>
       <p className="mb-3 text-xs font-medium text-zinc-600">Tri des lignes: {rowOrderLabelByMode[rowOrder]}</p>
 
@@ -457,6 +480,36 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
                   <strong>
                     {format(new Date(`${v.worstWindowStart}T12:00:00.000Z`), "dd/MM/yyyy", { locale: fr })}
                   </strong>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {sectorCompetenceViolations.length > 0 ? (
+        <div
+          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm"
+          role="alert"
+        >
+          <p className="font-semibold text-amber-900">Problèmes de compétences</p>
+          
+          <ul className="mt-3 max-h-[min(40vh,22rem)] space-y-2 overflow-y-auto pr-1">
+            {sectorCompetenceViolations.map((v) => (
+              <li
+                key={`${v.userId}-${v.dateKey}-${v.shiftCode}`}
+                className="rounded-md border border-amber-200 bg-white/90 px-3 py-2"
+              >
+                <span className="font-medium text-amber-950">{v.userDisplayName}</span>
+                <span className="text-amber-950/90">
+                  {" "}
+                  — le{" "}
+                  <strong>{format(new Date(`${v.dateKey}T12:00:00.000Z`), "dd/MM/yyyy", { locale: fr })}</strong> : code{" "}
+                  <strong>{v.shiftCode}</strong>
+                  <span className="text-amber-900/85">
+                    {" "}
+                    (competences : {v.userSkillsLabel})
+                  </span>
                 </span>
               </li>
             ))}

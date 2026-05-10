@@ -8,10 +8,14 @@ if (!connectionString) {
   throw new Error("Missing environment variable: DATABASE_URL");
 }
 
-// Supabase utilise une chaîne de certificats que Node peut rejeter avec sslmode=require seul.
+// Supabase pooler (port 6543) uses an intermediate CA not in the Node.js default bundle.
+// In production, set DATABASE_SSL_REJECT_UNAUTHORIZED=true and provide the CA via
+// DATABASE_SSL_CA env var, or use sslmode=require in the connection string with the
+// Supabase CA certificate. Local dev keeps rejectUnauthorized off for convenience.
+const sslRejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === "true";
 const adapter = new PrismaPg({
   connectionString,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: sslRejectUnauthorized },
 });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });

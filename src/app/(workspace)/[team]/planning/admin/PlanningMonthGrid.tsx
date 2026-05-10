@@ -16,6 +16,7 @@ import {
   type PlanningCommentType,
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
+import { getShiftDurationHours } from "@/lib/shift-hours";
 
 export type DayCol = { key: string; dayNum: number; dow: string };
 
@@ -23,7 +24,14 @@ export type UserRow = { id: string; displayName: string };
 
 export type GroupBlock = { label: string; color: string; users: UserRow[] };
 
-export type ShiftOption = { id: string; code: string; color: string; label: string };
+export type ShiftOption = {
+  id: string;
+  code: string;
+  color: string;
+  label: string;
+  startsAt: string;
+  endsAt: string;
+};
 type PlanningCommentItem = {
   id: string;
   type: string;
@@ -69,6 +77,9 @@ type Props = {
   /** `${userId}|${yyyy-MM-dd}` -> commentaires */
   commentsByKey: Record<string, PlanningCommentItem[]>;
 };
+
+/** Aligné sur le récap Droits : ces codes ne comptent pas dans les heures travaillées. */
+const EXCLUDE_CODES_FROM_WORKED_HOURS = ["CA", "CF", "CH", "RTT"] as const;
 
 const SYNTH_ORDER = [
   "JD1",
@@ -166,6 +177,39 @@ function stableSerializeCells(cells: Record<string, string>): string {
   return keys.map((k) => `${k}:${cells[k]}`).join("|");
 }
 
+function formatMonthHoursDisplay(hours: number): string {
+  const rounded = Math.round(hours * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
+const COMMENT_POPOVER_WIDTH = 352;
+const COMMENT_POPOVER_MAX_HEIGHT = 360;
+const VIEW_MARGIN = 8;
+
+/** Position sous l’ancre ; remonte au-dessus si pas assez de place en bas (viewport). */
+function computeCommentPopoverPosition(anchor: {
+  left: number;
+  top: number;
+  bottom: number;
+  width: number;
+}): { top: number; left: number; width: number } {
+  if (typeof window === "undefined") {
+    return { top: anchor.bottom + 6, left: anchor.left, width: COMMENT_POPOVER_WIDTH };
+  }
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const width = Math.min(COMMENT_POPOVER_WIDTH, vw - 2 * VIEW_MARGIN);
+  let left = anchor.left;
+  left = Math.max(VIEW_MARGIN, Math.min(left, vw - width - VIEW_MARGIN));
+  const gap = 6;
+  let top = anchor.bottom + gap;
+  if (top + COMMENT_POPOVER_MAX_HEIGHT > vh - VIEW_MARGIN) {
+    top = anchor.top - COMMENT_POPOVER_MAX_HEIGHT - gap;
+  }
+  if (top < VIEW_MARGIN) top = VIEW_MARGIN;
+  return { top, left, width };
+}
+
 export function PlanningMonthGrid({
   teamSlug,
   monthLabel,
@@ -178,11 +222,13 @@ export function PlanningMonthGrid({
 }: Props) {
   const [localCells, setLocalCells] = useState<Record<string, string>>({});
   const prevDataSignature = useRef("");
+  const gridScrollRef = useRef<HTMLDivElement>(null);
   const [selectedCommentCell, setSelectedCommentCell] = useState<{
     key: string;
     userId: string;
     userName: string;
     date: string;
+    anchorRect: { left: number; top: number; bottom: number; width: number };
   } | null>(null);
 
   const serverDataSignature = useMemo(
@@ -198,6 +244,24 @@ export function PlanningMonthGrid({
     });
   }, [serverDataSignature]);
 
+  useEffect(() => {
+    if (!selectedCommentCell) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedCommentCell(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCommentCell]);
+
+  useEffect(() => {
+    if (!selectedCommentCell) return;
+    const el = gridScrollRef.current;
+    if (!el) return;
+    const close = () => setSelectedCommentCell(null);
+    el.addEventListener("scroll", close, { passive: true });
+    return () => el.removeEventListener("scroll", close);
+  }, [selectedCommentCell]);
+
   const legend = useMemo(() => orderedLegendShifts(shifts), [shifts]);
 
   const allUsers = useMemo(() => groups.flatMap((g) => g.users), [groups]);
@@ -208,6 +272,25 @@ export function PlanningMonthGrid({
     return cellShiftByKey[k] ?? templateShiftByUserAndDate[k] ?? "";
   };
   const commentsForCell = (k: string): PlanningCommentItem[] => commentsByKey[k] ?? [];
+
+  const shiftById = useMemo(() => new Map(shifts.map((s) => [s.id, s])), [shifts]);
+
+  const monthlyWorkedHoursByUserId = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const u of allUsers) {
+      let sum = 0;
+      for (const d of days) {
+        const k = `${u.id}|${d.key}`;
+        const sid = shiftValueForCell(k);
+        if (!sid) continue;
+        const st = shiftById.get(sid);
+        if (!st || EXCLUDE_CODES_FROM_WORKED_HOURS.some((c) => c === st.code)) continue;
+        sum += getShiftDurationHours(st.startsAt, st.endsAt);
+      }
+      map[u.id] = sum;
+    }
+    return map;
+  }, [allUsers, days, shiftById, cellShiftByKey, templateShiftByUserAndDate, localCells]);
 
   const totalsByUserAndCode = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
@@ -256,18 +339,19 @@ export function PlanningMonthGrid({
         const isWeekendOrHoliday = isWeekend || isHoliday;
         const required = rule.requiredOnDay(isWeekendOrHoliday);
         const count = counts[dayIdx];
+        const isOk =
+          required !== null && (required === 0 ? count === 0 : count === required);
+        const isOver = required !== null && count > required;
+        const isUnder = required !== null && required > 0 && count < required;
         return {
           count,
           required,
-          isWarning:
-            required === null
-              ? false
-              : required === 0
-                ? count > 0
-                : count < required,
+          isOk,
+          isOver,
+          isUnder,
         };
       });
-      return { code: rule.code, checks };
+      return { code: rule.code, isRpj: rule.code === "RPJ", checks };
     });
   }, [allUsers, cellShiftByKey, days, shifts, templateShiftByUserAndDate]);
 
@@ -283,9 +367,19 @@ export function PlanningMonthGrid({
     return map;
   }, [days]);
 
+  const popoverPos = selectedCommentCell ? computeCommentPopoverPosition(selectedCommentCell.anchorRect) : null;
+
   return (
-    <div className="space-y-3">
-      <div className="max-h-[85vh] overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm">
+    <>
+      <div className="space-y-3">
+        <div className="mx-auto w-max max-w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-center text-sm font-semibold capitalize text-zinc-900">
+          {monthLabel}
+        </div>
+
+        <div
+          ref={gridScrollRef}
+          className="mx-auto max-h-[85vh] w-max max-w-full overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm"
+        >
         <table className="min-w-max border-collapse text-[11px]">
           <thead>
             <tr className="bg-zinc-100">
@@ -306,6 +400,15 @@ export function PlanningMonthGrid({
                   {d.dow}
                 </th>
               ))}
+              <th
+                rowSpan={2}
+                title="Heures travaillées sur le mois (somme des durées des codes horaires)"
+                className="sticky top-0 z-30 w-[34px] min-w-[34px] max-w-[34px] border border-zinc-300 bg-zinc-200 px-0 py-1 text-center text-[9px] font-semibold leading-tight text-zinc-800"
+              >
+                h
+                <br />
+                mois
+              </th>
               <th
                 colSpan={legend.length}
                 className="sticky top-0 z-30 border border-zinc-300 bg-zinc-200 px-2 py-1 text-center text-xs font-semibold text-zinc-800"
@@ -328,7 +431,7 @@ export function PlanningMonthGrid({
               {legend.map((s) => (
                 <th
                   key={`leg-${s.code}`}
-                  className="sticky top-[28px] z-30 min-w-[28px] border border-zinc-300 px-0.5 py-1 text-center font-semibold text-zinc-700"
+                  className="sticky top-[28px] z-30 min-w-[22px] border border-zinc-300 px-0 py-1 text-center text-[10px] font-semibold leading-tight text-zinc-700"
                   style={{ backgroundColor: s.color }}
                 >
                   {s.code}
@@ -341,7 +444,7 @@ export function PlanningMonthGrid({
               <Fragment key={group.label}>
                 <tr className="bg-zinc-200">
                   <td
-                    colSpan={days.length + legend.length + 1}
+                    colSpan={days.length + legend.length + 2}
                     className="sticky left-0 z-20 border border-zinc-300 px-2 py-1 font-semibold text-zinc-800"
                     style={{ backgroundColor: group.color }}
                   >
@@ -404,14 +507,21 @@ export function PlanningMonthGrid({
                                   ? `${cellComments.length} commentaire(s)`
                                   : "Ajouter un commentaire"
                               }
-                              onClick={() =>
+                              onClick={(ev) => {
+                                const r = ev.currentTarget.getBoundingClientRect();
                                 setSelectedCommentCell({
                                   key: k,
                                   userId: u.id,
                                   userName: u.displayName,
                                   date: d.key,
-                                })
-                              }
+                                  anchorRect: {
+                                    left: r.left,
+                                    top: r.top,
+                                    bottom: r.bottom,
+                                    width: r.width,
+                                  },
+                                });
+                              }}
                             >
                               {cellComments.length > 0
                                 ? `${firstType ? planningCommentTypeBadge(firstType) : "CM"}${cellComments.length > 1 ? `+${cellComments.length - 1}` : ""}`
@@ -421,10 +531,13 @@ export function PlanningMonthGrid({
                         </td>
                       );
                     })}
+                    <td className="w-[34px] min-w-[34px] max-w-[34px] border border-zinc-200 bg-zinc-50 px-0 py-0.5 text-center tabular-nums text-[9px] font-semibold text-zinc-900">
+                      {formatMonthHoursDisplay(monthlyWorkedHoursByUserId[u.id] ?? 0)}
+                    </td>
                     {legend.map((s) => (
                       <td
                         key={`${u.id}-${s.code}`}
-                        className="border border-zinc-200 bg-white px-0.5 py-0.5 text-center tabular-nums text-zinc-800"
+                        className="min-w-[22px] max-w-[26px] border border-zinc-200 bg-white px-0 py-0.5 text-center text-[10px] tabular-nums leading-none text-zinc-800"
                       >
                         {totalsByUserAndCode[u.id]?.[s.code] ?? 0}
                       </td>
@@ -436,7 +549,7 @@ export function PlanningMonthGrid({
             {sectorCoverageRows.length > 0 ? (
               <tr className="bg-indigo-50/80">
                 <td
-                  colSpan={days.length + legend.length + 1}
+                  colSpan={days.length + legend.length + 2}
                   className="sticky left-0 z-20 border border-zinc-300 bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-900"
                 >
                   Couverture secteurs
@@ -448,128 +561,183 @@ export function PlanningMonthGrid({
                 <td className="sticky left-0 z-20 border border-zinc-300 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-900">
                   {row.code}
                 </td>
-                {row.checks.map((check, idx) => (
-                  <td
-                    key={`sector-${row.code}-${days[idx].key}`}
-                    className={[
-                      "border border-zinc-300 px-0.5 py-0.5 text-center tabular-nums text-[10px]",
-                      check.isWarning ? "bg-rose-100 font-semibold text-rose-800" : "text-zinc-800",
-                    ].join(" ")}
-                    title={
-                      check.required === null
-                        ? `${row.code}: ${check.count} affectation(s) — pas de minimum imposé`
-                        : `${row.code}: ${check.count}/${check.required}`
-                    }
+                <td colSpan={days.length} className="border border-zinc-300 p-0 align-middle">
+                  <div
+                    className="grid h-full min-h-[22px] w-full divide-x divide-zinc-300"
+                    style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
                   >
-                    {check.count}
-                    {check.isWarning ? " !" : ""}
-                  </td>
-                ))}
+                    {row.checks.map((check, idx) => (
+                      <div
+                        key={`sector-${row.code}-${days[idx].key}`}
+                        className={[
+                          "flex items-center justify-center px-0 py-0.5",
+                          row.isRpj
+                            ? check.count > 0
+                              ? "bg-emerald-100 font-semibold text-emerald-800"
+                              : "bg-white text-zinc-800"
+                            : check.isOk
+                              ? "bg-emerald-100 font-semibold text-emerald-800"
+                              : check.isUnder
+                                ? "bg-rose-100 font-semibold text-rose-800"
+                                : check.isOver
+                                  ? "bg-amber-100 font-semibold text-amber-900"
+                                  : "text-zinc-800",
+                        ].join(" ")}
+                        title={
+                          row.isRpj
+                            ? `${row.code}: ${check.count} affectation(s)`
+                            : check.required === null
+                              ? `${row.code}: ${check.count} affectation(s) — pas de minimum imposé`
+                              : check.isOver
+                                ? `${row.code}: ${check.count}/${check.required} — sur-effectif`
+                                : check.isUnder
+                                  ? `${row.code}: ${check.count}/${check.required} — sous-effectif`
+                                  : `${row.code}: ${check.count}/${check.required}`
+                        }
+                      >
+                        <span className="inline-flex max-w-[22px] flex-col items-center gap-0 leading-none">
+                          <span className="text-center text-[8px] font-semibold tabular-nums">
+                            {check.count}
+                            {row.isRpj ? "" : check.isOver ? "+" : check.isUnder ? "−" : ""}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </td>
+                <td
+                  className="w-[34px] min-w-[34px] max-w-[34px] border border-zinc-300 bg-indigo-50/50"
+                  aria-hidden="true"
+                />
                 <td colSpan={legend.length} className="border border-zinc-300 bg-indigo-50/50" />
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
-      {selectedCommentCell ? (
-        <aside className="rounded-lg border border-zinc-300 bg-white p-3 shadow-sm">
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-900">Commentaires du jour</h2>
-              <p className="text-xs text-zinc-600">
-                {selectedCommentCell.userName} - {format(new Date(`${selectedCommentCell.date}T12:00:00.000Z`), "dd MMMM yyyy", { locale: fr })}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50"
-              onClick={() => setSelectedCommentCell(null)}
-            >
-              Fermer
-            </button>
-          </div>
 
-          <div className="space-y-2">
-            {commentsForCell(selectedCommentCell.key).length === 0 ? (
-              <p className="rounded border border-dashed border-zinc-300 bg-zinc-50 px-2 py-1 text-xs text-zinc-500">
-                Aucun commentaire pour ce jour.
-              </p>
-            ) : (
-              commentsForCell(selectedCommentCell.key).map((comment) => (
-                <div key={comment.id} className="rounded border border-zinc-200 bg-zinc-50 p-2 text-xs text-zinc-700">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-zinc-900">
-                      {planningCommentTypeLabel(comment.type as PlanningCommentType)} -{" "}
-                      {planningCommentStatusLabel(comment.status as PlanningCommentStatus)}
-                    </div>
-                    <form action={deletePlanningComment}>
-                      <input type="hidden" name="teamSlug" value={teamSlug} />
-                      <input type="hidden" name="commentId" value={comment.id} />
-                      <button
-                        type="submit"
-                        className="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 hover:bg-rose-100"
-                      >
-                        Suppr.
-                      </button>
-                    </form>
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap text-zinc-800">{comment.text}</p>
-                  <p className="mt-1 text-[10px] text-zinc-500">
-                    {planningCommentVisibilityLabel(comment.visibility as PlanningCommentVisibility)} -{" "}
-                    {format(new Date(comment.createdAtIso), "dd/MM/yyyy HH:mm")} - {comment.createdByName}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-
-          <form action={addPlanningComment} className="mt-3 grid gap-2 rounded border border-zinc-200 bg-white p-2">
-            <input type="hidden" name="teamSlug" value={teamSlug} />
-            <input type="hidden" name="userId" value={selectedCommentCell.userId} />
-            <input type="hidden" name="date" value={selectedCommentCell.date} />
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <select name="type" defaultValue="INFO" className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700">
-                {PLANNING_COMMENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {planningCommentTypeLabel(type)}
-                  </option>
-                ))}
-              </select>
-              <select name="status" defaultValue="NONE" className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700">
-                {PLANNING_COMMENT_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {planningCommentStatusLabel(status)}
-                  </option>
-                ))}
-              </select>
-              <select
-                name="visibility"
-                defaultValue="TEAM"
-                className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
+      {selectedCommentCell && popoverPos ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[90] cursor-default bg-zinc-900/15"
+            aria-label="Fermer les commentaires"
+            onClick={() => setSelectedCommentCell(null)}
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="planning-comment-popover-title"
+            className="fixed z-[100] max-h-[360px] overflow-y-auto rounded-lg border border-sky-200 bg-sky-50/95 px-3 py-2 shadow-xl ring-1 ring-black/10"
+            style={{
+              top: popoverPos.top,
+              left: popoverPos.left,
+              width: popoverPos.width,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 id="planning-comment-popover-title" className="text-xs font-semibold text-zinc-900">
+                  Commentaires du jour
+                </h2>
+                <p className="truncate text-[11px] text-zinc-600">
+                  {selectedCommentCell.userName} —{" "}
+                  {format(new Date(`${selectedCommentCell.date}T12:00:00.000Z`), "dd MMM yyyy", { locale: fr })}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50"
+                onClick={() => setSelectedCommentCell(null)}
               >
-                {PLANNING_COMMENT_VISIBILITIES.map((visibility) => (
-                  <option key={visibility} value={visibility}>
-                    {planningCommentVisibilityLabel(visibility)}
-                  </option>
-                ))}
-              </select>
+                Fermer
+              </button>
             </div>
-            <textarea
-              name="text"
-              required
-              rows={3}
-              className="w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
-              placeholder="Ex: CA validé le 12/04, formation incendie à 14h..."
-            />
-            <button
-              type="submit"
-              className="justify-self-start rounded border border-sky-300 bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700"
-            >
-              Ajouter le commentaire
-            </button>
-          </form>
-        </aside>
+
+            <div className="max-h-36 space-y-1.5 overflow-y-auto">
+              {commentsForCell(selectedCommentCell.key).length === 0 ? (
+                <p className="rounded border border-dashed border-zinc-300 bg-white/80 px-2 py-1 text-[11px] text-zinc-500">
+                  Aucun commentaire pour ce jour.
+                </p>
+              ) : (
+                commentsForCell(selectedCommentCell.key).map((comment) => (
+                  <div key={comment.id} className="rounded border border-zinc-200 bg-white p-2 text-[11px] text-zinc-700">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-semibold text-zinc-900">
+                        {planningCommentTypeLabel(comment.type as PlanningCommentType)} —{" "}
+                        {planningCommentStatusLabel(comment.status as PlanningCommentStatus)}
+                      </div>
+                      <form action={deletePlanningComment}>
+                        <input type="hidden" name="teamSlug" value={teamSlug} />
+                        <input type="hidden" name="commentId" value={comment.id} />
+                        <button
+                          type="submit"
+                          className="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 hover:bg-rose-100"
+                        >
+                          Suppr.
+                        </button>
+                      </form>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-zinc-800">{comment.text}</p>
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      {planningCommentVisibilityLabel(comment.visibility as PlanningCommentVisibility)} —{" "}
+                      {format(new Date(comment.createdAtIso), "dd/MM/yy HH:mm")} — {comment.createdByName}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <form action={addPlanningComment} className="mt-2 grid gap-1.5 rounded border border-zinc-200 bg-white p-2">
+              <input type="hidden" name="teamSlug" value={teamSlug} />
+              <input type="hidden" name="userId" value={selectedCommentCell.userId} />
+              <input type="hidden" name="date" value={selectedCommentCell.date} />
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
+                <select name="type" defaultValue="INFO" className="rounded border border-zinc-300 px-1.5 py-1 text-[11px] text-zinc-700">
+                  {PLANNING_COMMENT_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {planningCommentTypeLabel(type)}
+                    </option>
+                  ))}
+                </select>
+                <select name="status" defaultValue="NONE" className="rounded border border-zinc-300 px-1.5 py-1 text-[11px] text-zinc-700">
+                  {PLANNING_COMMENT_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {planningCommentStatusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  name="visibility"
+                  defaultValue="TEAM"
+                  className="rounded border border-zinc-300 px-1.5 py-1 text-[11px] text-zinc-700"
+                >
+                  {PLANNING_COMMENT_VISIBILITIES.map((visibility) => (
+                    <option key={visibility} value={visibility}>
+                      {planningCommentVisibilityLabel(visibility)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                name="text"
+                required
+                rows={2}
+                className="w-full rounded border border-zinc-300 px-2 py-1 text-[11px] text-zinc-700"
+                placeholder="Ex: CA validé, formation…"
+              />
+              <button
+                type="submit"
+                className="justify-self-start rounded border border-sky-600 bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-700"
+              >
+                Ajouter
+              </button>
+            </form>
+          </aside>
+        </>
       ) : null}
-    </div>
+    </>
   );
 }

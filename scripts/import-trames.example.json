@@ -1,0 +1,27 @@
+{
+  "teamSlug": "ide-jour",
+  "templates": [
+    {
+      "number": 1,
+      "label": "Exemple (à remplacer)",
+      "cycleWeeks": 2,
+      "cycleStartDate": null,
+      "cells": [
+        "J12",
+        "J12",
+        null,
+        null,
+        null,
+        null,
+        null,
+        "N",
+        "N",
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ]
+}

@@ -2,22 +2,13 @@
 
 import { useState } from "react";
 
-const PALETTE = [
-  "#d1fae5", // emerald-100
-  "#a7f3d0", // emerald-200
-  "#bbf7d0", // green-200
-  "#fce7f3", // pink-100
-  "#fbcfe8", // pink-200
-  "#fef3c7", // amber-100
-  "#fde68a", // amber-200
-  "#ffedd5", // orange-100
-  "#fed7aa", // orange-200
-  "#dbeafe", // blue-100
-  "#bfdbfe", // blue-200
-  "#e0e7ff", // indigo-100
-  "#ddd6fe", // violet-200
-  "#f5f5f4", // stone-100
-  "#e5e7eb", // gray-200
+/** Pastels lisibles sur les grilles planning : orange, vert, jaune, rose, bleu */
+const PALETTE: { hex: string; label: string }[] = [
+  { hex: "#fdba74", label: "Orange" },
+  { hex: "#86efac", label: "Vert" },
+  { hex: "#fde047", label: "Jaune" },
+  { hex: "#f9a8d4", label: "Rose" },
+  { hex: "#93c5fd", label: "Bleu" },
 ];
 
 export function ColorPicker({
@@ -27,25 +18,25 @@ export function ColorPicker({
   name: string;
   defaultValue?: string | null;
 }) {
-  const [selected, setSelected] = useState(defaultValue ?? PALETTE[0]);
+  const [selected, setSelected] = useState(defaultValue ?? PALETTE[0].hex);
 
   return (
     <div>
       <p className="text-xs font-medium text-zinc-600">Couleur du bloc</p>
       <input type="hidden" name={name} value={selected} />
-      <div className="mt-2 flex flex-wrap gap-2">
-        {PALETTE.map((color) => (
+      <div className="mt-2 flex flex-wrap gap-3">
+        {PALETTE.map(({ hex, label }) => (
           <button
-            key={color}
+            key={hex}
             type="button"
-            onClick={() => setSelected(color)}
+            onClick={() => setSelected(hex)}
             className={[
-              "h-7 w-7 rounded-full border-2 transition-transform hover:scale-110",
-              selected === color ? "border-zinc-900 ring-2 ring-zinc-400 ring-offset-1" : "border-zinc-300",
+              "h-9 w-9 rounded-full border-2 shadow-sm transition-transform hover:scale-110",
+              selected === hex ? "border-zinc-900 ring-2 ring-zinc-400 ring-offset-1" : "border-white",
             ].join(" ")}
-            style={{ backgroundColor: color }}
-            title={color}
-            aria-label={`Couleur ${color}`}
+            style={{ backgroundColor: hex }}
+            title={label}
+            aria-label={`Couleur ${label}`}
           />
         ))}
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { explainGoogleCalendarExportFailure } from "@/lib/google-calendar-export-errors";
 
 type GoogleCalendarEventInput = {
   id: string;
@@ -14,93 +15,55 @@ type GoogleCalendarEventInput = {
 };
 
 type Props = {
+  teamSlug: string;
   events: GoogleCalendarEventInput[];
+  isGoogleLinked: boolean;
 };
 
-function toGoogleDateTime(date: string, hhmm: string) {
-  return `${date}T${hhmm}:00`;
-}
-
-export function GoogleCalendarExportButton({ events }: Props) {
+export function GoogleCalendarExportButton({ teamSlug, events, isGoogleLinked }: Props) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const handleClick = async () => {
-    if (events.length === 0 || pending) return;
+    if (events.length === 0 || pending || !isGoogleLinked) return;
     setPending(true);
     setMessage(null);
 
     try {
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        setMessage("Connexion Google indisponible: configuration Supabase manquante.");
+      const exportResponse = await fetch("/api/google-calendar/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events }),
+      });
+
+      if (exportResponse.status === 409) {
+        const nextPath = `/${teamSlug}/planning-moi${window.location.search}`;
+        window.location.assign(`/api/google-calendar/link?next=${encodeURIComponent(nextPath)}`);
         return;
       }
 
-      const { createSupabaseBrowserClient } = await import("@/lib/supabase/client");
-      const supabase = createSupabaseBrowserClient();
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-      if (sessionError) {
-        setMessage("Impossible de lire la session Google.");
+      if (!exportResponse.ok) {
+        const body = (await exportResponse.json().catch(() => null)) as { error?: string } | null;
+        setMessage(body?.error ?? "Echec de l'export Google Agenda.");
         return;
       }
 
-      const providerToken = session?.provider_token;
-      if (!providerToken) {
-        const redirectTo = window.location.href;
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo,
-            scopes: "https://www.googleapis.com/auth/calendar.events",
-            queryParams: { access_type: "offline", prompt: "consent" },
-          },
-        });
-        if (error) {
-          setMessage(`Connexion Google impossible: ${error.message}`);
-        }
-        return;
-      }
-
-      let okCount = 0;
-      for (const event of events) {
-        const body = {
-          summary: `${event.code} - ${event.label}`,
-          description: `Equipe: ${event.teamLabel}\nHoraires: ${event.startsAt}-${event.endsAt}\nSource: Planner SAU`,
-          start: {
-            dateTime: toGoogleDateTime(event.date, event.startsAt),
-            timeZone: "Europe/Paris",
-          },
-          end: {
-            dateTime: toGoogleDateTime(event.endDate, event.endsAt),
-            timeZone: "Europe/Paris",
-          },
-          extendedProperties: {
-            private: {
-              plannerEventId: event.id,
-            },
-          },
-        };
-
-        const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${providerToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (res.ok) okCount += 1;
-      }
-
-      if (okCount === events.length) {
+      const data = (await exportResponse.json()) as {
+        okCount: number;
+        total: number;
+        sampleErrors?: string[];
+      };
+      if (data.okCount === data.total) {
+        const okCount = data.okCount;
         setMessage(`${okCount} evenement(s) ajoutes a Google Agenda.`);
       } else {
-        setMessage(`${okCount}/${events.length} evenement(s) ajoutes. Verifiez vos autorisations Google.`);
+        const samples = data.sampleErrors ?? [];
+        const firstErr = samples[0];
+        const hint = explainGoogleCalendarExportFailure(samples);
+        const detail = firstErr ? ` Détail Google : ${firstErr}` : "";
+        const suffix =
+          hint ?? (!detail ? " Verifiez vos autorisations Google ou reliancez le compte dans Réglages." : "");
+        setMessage(`${data.okCount}/${data.total} evenement(s) ajoutes.${detail}${suffix ? `\n\n${suffix}` : ""}`);
       }
     } catch {
       setMessage("Echec de l'export Google Agenda.");
@@ -114,12 +77,20 @@ export function GoogleCalendarExportButton({ events }: Props) {
       <button
         type="button"
         onClick={handleClick}
-        disabled={pending || events.length === 0}
+        disabled={pending || events.length === 0 || !isGoogleLinked}
         className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+        title={!isGoogleLinked ? "Liez d'abord votre compte Google dans Reglages." : undefined}
       >
         {pending ? "Export Google..." : "Google Agenda auto"}
       </button>
-      {message ? <p className="mt-1 text-xs text-zinc-600">{message}</p> : null}
+      {!isGoogleLinked ? (
+        <p className="mt-1 text-xs text-amber-700">
+          Compte Google non lie. Activez-le dans <a href={`/${teamSlug}/parametres`} className="underline">Reglages</a>.
+        </p>
+      ) : null}
+      {message ? (
+        <p className="mt-1 max-w-xl whitespace-pre-wrap text-xs text-zinc-600">{message}</p>
+      ) : null}
     </div>
   );
 }

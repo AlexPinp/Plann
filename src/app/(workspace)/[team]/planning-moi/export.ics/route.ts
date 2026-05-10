@@ -14,6 +14,15 @@ import { prisma } from "@/lib/prisma";
 import { PlanningStatus } from "@/generated/prisma/enums";
 import { requireTeamMembership } from "@/lib/team";
 
+const SHIFT_TYPE_SELECT = {
+  id: true,
+  code: true,
+  label: true,
+  color: true,
+  startsAt: true,
+  endsAt: true,
+} as const;
+
 function parseMonth(searchParams: URLSearchParams): { year: number; month: number } {
   const now = new Date();
   const rawYear = Number(searchParams.get("year"));
@@ -72,7 +81,7 @@ function buildIcsCalendar(events: Array<{ uid: string; start: string; end: strin
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Planner SAU LRSY//Mon Planning//FR",
+    "PRODID:-//Plann//Mon Planning//FR",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
   ];
@@ -138,10 +147,14 @@ export async function GET(
         date: { gte: rangeStart, lte: rangeEnd },
         planningWeek: { teamId: ctx.team.id },
       },
-      include: { shiftType: true },
+      include: { shiftType: { select: SHIFT_TYPE_SELECT } },
       orderBy: { date: "asc" },
     }),
-    prisma.shiftType.findMany({ orderBy: { code: "asc" } }),
+    prisma.shiftType.findMany({
+      where: { teamId: ctx.team.id },
+      select: SHIFT_TYPE_SELECT,
+      orderBy: { code: "asc" },
+    }),
     myTemplateNumbers.length
       ? prisma.planningTemplate.findMany({
           where: { teamId: ctx.team.id, number: { in: myTemplateNumbers } },
@@ -173,8 +186,10 @@ export async function GET(
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const templateShiftByNumberAndOffset = new Map<string, string>();
   const cycleWeeksByTemplateNumber = new Map<number, number>();
+  const cycleStartDateByTemplateNumber = new Map<number, Date | null>();
   for (const template of myTemplates) {
     cycleWeeksByTemplateNumber.set(template.number, normalizeTemplateCycleWeeks(template.cycleWeeks));
+    cycleStartDateByTemplateNumber.set(template.number, template.cycleStartDate);
     for (const entry of template.entries) {
       if (entry.shiftTypeId) {
         templateShiftByNumberAndOffset.set(`${template.number}|${entry.dayOffset}`, entry.shiftTypeId);
@@ -194,7 +209,11 @@ export async function GET(
     const cycleW = effectiveTemplateNumber
       ? cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS
       : 6;
-    const offset = getTemplateDayOffsetForCycle(date, cycleW);
+    const cycleStart =
+      effectiveTemplateNumber != null
+        ? cycleStartDateByTemplateNumber.get(effectiveTemplateNumber) ?? null
+        : null;
+    const offset = getTemplateDayOffsetForCycle(date, cycleW, cycleStart);
     const templateShiftId = effectiveTemplateNumber
       ? templateShiftByNumberAndOffset.get(`${effectiveTemplateNumber}|${offset}`)
       : undefined;
@@ -221,7 +240,7 @@ export async function GET(
       }
       const endStamp = toLocalDateTimeStamp(endDate, shift.endsAt);
       events.push({
-        uid: `${me.id}-${key}-${shift.code}@planner-sau-lrsy`,
+        uid: `${me.id}-${key}-${shift.code}@plann`,
         start: startStamp,
         end: endStamp,
         summary: `${shift.code} - ${shift.label}`,

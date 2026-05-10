@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ShiftCategory } from "@/generated/prisma/enums";
-import { prisma } from "@/lib/prisma";
 import { adminTeamPath } from "@/lib/routes";
 import { getShiftDurationHoursRounded } from "@/lib/shift-hours";
-import { getTeamBySlug } from "@/lib/team";
-import { createShiftCode, deleteShiftCode, updateShiftCode } from "./actions";
+import { getAllTeams, getTeamBySlug } from "@/lib/team";
+import { findManyShiftTypesOrdered } from "@/lib/shift-type-queries";
+import { copyShiftCodesFromTeam, createShiftCode, deleteShiftCode, updateShiftCode } from "./actions";
 
 type Props = {
   params: Promise<{ team: string }>;
@@ -27,13 +27,19 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
   const created = query.created === "1";
   const updated = query.updated === "1";
   const deleted = query.deleted === "1";
+  const copiedRaw = typeof query.copied === "string" ? query.copied : undefined;
+  const copiedCount =
+    copiedRaw !== undefined && /^\d+$/.test(copiedRaw) ? Math.min(9999, Math.max(0, Number(copiedRaw))) : null;
   const q = getStringParam(query.q).trim().toLowerCase();
   const categoryFilter = getStringParam(query.category);
   const sort = getStringParam(query.sort) || "code-asc";
 
-  const allShifts = await prisma.shiftType.findMany({
-    orderBy: [{ code: "asc" }],
-  });
+  const [teamsOtherThanCurrent, { shifts: allShifts, usedLegacyCategoryFallback: hadInvalidCategoryData }] =
+    await Promise.all([
+      getAllTeams(),
+      findManyShiftTypesOrdered(team.id),
+    ]);
+  const sourceTeamsForCopy = teamsOtherThanCurrent.filter((t) => t.id !== team.id);
   const filtered = allShifts.filter((shift) => {
     if (categoryFilter && categoryFilter !== "all" && shift.category !== categoryFilter) return false;
     if (!q) return true;
@@ -65,14 +71,31 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Codes horaires</h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Créez, modifiez ou supprimez les codes utilisés dans le planning, avec leur valeur en heures.
+          Codes utilisés dans le planning de <span className="font-medium text-zinc-800">{team.label}</span> uniquement
+          (horaires et affichage independants des autres equipes).
         </p>
       </div>
 
       {created && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code créé.</p>}
       {updated && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code mis à jour.</p>}
       {deleted && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Code supprimé.</p>}
+      {copiedCount !== null && copiedCount > 0 ? (
+        <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {copiedCount} code{copiedCount > 1 ? "s" : ""} copié{copiedCount > 1 ? "s" : ""} depuis l&apos;autre équipe (les
+          codes déjà présents ici ont été ignorés).
+        </p>
+      ) : null}
+      {copiedCount === 0 ? (
+        <p className="mb-4 rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-700">
+          Aucun nouveau code copié : tous les codes de la source existent déjà pour cette équipe.
+        </p>
+      ) : null}
       {error && <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+      {hadInvalidCategoryData ? (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Des catégories invalides ont été détectées en base. Elles sont affichées en JOUR pour permettre correction.
+        </p>
+      ) : null}
 
       <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <form method="get" className="grid gap-3 md:grid-cols-4">
@@ -349,6 +372,43 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
           </div>
         </form>
       </section>
+
+      {sourceTeamsForCopy.length > 0 ? (
+        <section className="mt-8 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-indigo-950">Copier depuis une autre équipe</h2>
+          <p className="mt-1 text-xs text-indigo-900/90">
+            Ajoute uniquement les codes qui n&apos;existent pas encore pour {team.label} (horaires, libellés,
+            couleurs et liaisons compétences comme à la source).
+          </p>
+          <form action={copyShiftCodesFromTeam} className="mt-3 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="teamSlug" value={team.slug} />
+            <div className="min-w-[220px] flex-1">
+              <label htmlFor="sourceTeamSlug" className="text-xs font-medium text-indigo-950">
+                Équipe source
+              </label>
+              <select
+                id="sourceTeamSlug"
+                name="sourceTeamSlug"
+                required
+                defaultValue={sourceTeamsForCopy[0]!.slug}
+                className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              >
+                {sourceTeamsForCopy.map((t) => (
+                  <option key={t.id} value={t.slug}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="rounded-lg border border-indigo-700 bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+            >
+              Copier les codes manquants
+            </button>
+          </form>
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSessionPrismaUser } from "@/lib/current-user";
-import { canEditPlanningAndStaff } from "@/lib/user-roles";
+import { canEditPlanningAndStaff, getEditableTeamIds } from "@/lib/user-roles";
 
 const createAssignmentSchema = z.object({
   planningWeekId: z.string().min(1),
@@ -30,6 +30,22 @@ export async function GET(request: Request) {
 
   if (!planningWeekId) {
     return Response.json({ error: "planningWeekId is required" }, { status: 400 });
+  }
+
+  const week = await prisma.planningWeek.findUnique({
+    where: { id: planningWeekId },
+    select: { teamId: true },
+  });
+  if (!week) {
+    return Response.json({ error: "Planning week not found" }, { status: 404 });
+  }
+
+  const membership = await prisma.userTeam.findUnique({
+    where: { userId_teamId: { userId: user.id, teamId: week.teamId } },
+    select: { userId: true },
+  });
+  if (!membership && user.role !== "ADMIN") {
+    return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
   const assignments = await prisma.assignment.findMany({
@@ -61,6 +77,27 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+
+  const week = await prisma.planningWeek.findUnique({
+    where: { id: data.planningWeekId },
+    select: { teamId: true },
+  });
+  if (!week) {
+    return Response.json({ error: "Planning week not found" }, { status: 404 });
+  }
+
+  const editableTeamIds = await getEditableTeamIds(user.id, user.role);
+  if (!editableTeamIds.includes(week.teamId)) {
+    return Response.json({ error: "Access denied" }, { status: 403 });
+  }
+
+  const shiftOk = await prisma.shiftType.findFirst({
+    where: { id: data.shiftTypeId, teamId: week.teamId },
+    select: { id: true },
+  });
+  if (!shiftOk) {
+    return Response.json({ error: "Shift type does not belong to this team's catalogue" }, { status: 400 });
+  }
 
   const assignment = await prisma.assignment.create({
     data: {

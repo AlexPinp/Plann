@@ -37,11 +37,11 @@ export async function requirePlanningAndStaffAccess() {
 }
 
 /** Scope qu'on peut voir/modifier côté admin :
- *  - ADMIN global : toutes les équipes
- *  - CADRE / REFERENT : uniquement les équipes dont il est membre avec roleInTeam ∈ staff.
+ *  - ADMIN, CADRE, REFERENT globaux : toutes les équipes (mêmes droits globaux).
+ *  - Autres : uniquement les équipes dont ils sont membres avec roleInTeam ∈ staff.
  *  Renvoie la liste des teamIds autorisés. */
 export async function getEditableTeamIds(userId: string, globalRole: UserRole): Promise<string[]> {
-  if (globalRole === UserRole.ADMIN) {
+  if (PLANNING_AND_STAFF_ROLES.includes(globalRole)) {
     const teams = await prisma.team.findMany({ select: { id: true } });
     return teams.map((t) => t.id);
   }

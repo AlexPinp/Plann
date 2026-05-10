@@ -9,18 +9,18 @@ type Props = {
 
 const SETTINGS_LINKS = [
   {
-    title: "Agents & competences",
+    title: "Agents",
     description: "Gestion des fiches agents, roles, trames, profils RH et competences.",
     segment: "agents",
   },
   {
     title: "Codes horaires",
-    description: "Gestion des codes de poste, horaires, categories et couleurs.",
+    description: "Codes de poste propres a cette equipe (horaires, categories, couleurs).",
     segment: "codes-horaires",
   },
   {
     title: "Trames",
-    description: "Edition des trames cycliques et des affectations par jour.",
+    description: "Trames pour cette equipe.",
     segment: "trames",
   },
 ] as const;
@@ -35,7 +35,7 @@ export default async function ParametresAdminPage({ params }: Props) {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Paramètres admin</h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Espace de configuration de l&apos;administration pour l&apos;equipe {team.label}.
+          Espace de configuration pour l&apos;equipe {team.label}.
         </p>
       </div>
 

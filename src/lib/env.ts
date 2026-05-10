@@ -1,7 +1,12 @@
 type RequiredEnvKey = "NEXT_PUBLIC_SUPABASE_URL";
 
 export function getEnv(key: RequiredEnvKey): string {
-  const value = process.env[key]?.trim();
+  // In client bundles, Next.js only inlines NEXT_PUBLIC_* vars on static access.
+  // Keep explicit branches instead of process.env[key].
+  const value =
+    key === "NEXT_PUBLIC_SUPABASE_URL"
+      ? process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+      : undefined;
   if (!value) {
     throw new Error(`Missing environment variable: ${key}`);
   }

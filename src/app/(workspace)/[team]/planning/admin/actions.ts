@@ -49,12 +49,30 @@ export async function setPlanningCell(formData: FormData) {
     return;
   }
 
+  const userInTeam = await prisma.userTeam.findUnique({
+    where: { userId_teamId: { userId, teamId } },
+    select: { userId: true },
+  });
+  if (!userInTeam) {
+    return;
+  }
+
   const parts = dateStr.split("-").map(Number);
   if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
     return;
   }
   const [y, m, d] = parts;
   const { start: dayStart, end: dayEnd } = utcDayRange(y, m - 1, d);
+
+  const shiftBelongsToTeam =
+    shiftTypeId &&
+    (await prisma.shiftType.findFirst({
+      where: { id: shiftTypeId, teamId },
+      select: { id: true },
+    }));
+  if (shiftTypeId && !shiftBelongsToTeam) {
+    return;
+  }
 
   if (!shiftTypeId) {
     await prisma.assignment.deleteMany({
@@ -181,7 +199,7 @@ function parseCommentEnum<T extends string>(value: FormDataEntryValue | null, al
 
 export async function addPlanningComment(formData: FormData) {
   const actor = await requirePlanningAndStaffAccess();
-  const { teamSlug } = await resolveTeamIdFromForm(formData);
+  const { teamId: commentTeamId, teamSlug } = await resolveTeamIdFromForm(formData);
 
   const userId = String(formData.get("userId") ?? "").trim();
   const dateStr = String(formData.get("date") ?? "").trim();
@@ -194,6 +212,12 @@ export async function addPlanningComment(formData: FormData) {
     ("TEAM" as PlanningCommentVisibility);
 
   if (!userId || !dateStr || !text || !type) return;
+
+  const targetInTeam = await prisma.userTeam.findUnique({
+    where: { userId_teamId: { userId, teamId: commentTeamId } },
+    select: { userId: true },
+  });
+  if (!targetInTeam) return;
 
   const parts = dateStr.split("-").map(Number);
   if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return;
@@ -217,9 +241,21 @@ export async function addPlanningComment(formData: FormData) {
 
 export async function deletePlanningComment(formData: FormData) {
   await requirePlanningAndStaffAccess();
-  const { teamSlug } = await resolveTeamIdFromForm(formData);
+  const { teamId: deleteTeamId, teamSlug } = await resolveTeamIdFromForm(formData);
   const commentId = String(formData.get("commentId") ?? "").trim();
   if (!commentId) return;
+
+  const comment = await prisma.planningComment.findUnique({
+    where: { id: commentId },
+    select: { userId: true },
+  });
+  if (!comment) return;
+
+  const commentUserInTeam = await prisma.userTeam.findUnique({
+    where: { userId_teamId: { userId: comment.userId, teamId: deleteTeamId } },
+    select: { userId: true },
+  });
+  if (!commentUserInTeam) return;
 
   await prisma.planningComment.deleteMany({
     where: { id: commentId },

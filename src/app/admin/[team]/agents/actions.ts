@@ -45,6 +45,79 @@ async function revalidateAgentPages(teamSlug: string, id?: string) {
   }
 }
 
+async function revalidateWorkRateReporting(teamSlug: string, userId: string) {
+  await revalidateAgentPages(teamSlug, userId);
+  const teams = await getAllTeams();
+  for (const t of teams) {
+    revalidatePath(workspacePath(t.slug, "droits"));
+  }
+}
+
+const SEGMENT_WORK_PERCENTAGES = [100, 90, 80, 75, 70, 60, 50] as const;
+
+function parseSegmentWorkPercentage(raw: FormDataEntryValue | null): number | null {
+  const n = Number(raw ?? "");
+  return SEGMENT_WORK_PERCENTAGES.includes(n as (typeof SEGMENT_WORK_PERCENTAGES)[number]) ? n : null;
+}
+
+/** Champ mois HTML `YYYY-MM` → premier jour du mois UTC. */
+function parseSegmentMonthStartsOn(raw: string): Date | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(raw.trim());
+  if (!match) return null;
+  const y = Number(match[1]);
+  const mo = Number(match[2]);
+  if (!Number.isInteger(y) || !Number.isInteger(mo) || mo < 1 || mo > 12) return null;
+  return new Date(Date.UTC(y, mo - 1, 1, 12, 0, 0, 0));
+}
+
+export async function upsertUserWorkRateSegment(formData: FormData) {
+  await requireStaffAdmin();
+  const teamSlug = teamSlugFromForm(formData);
+  const agentsBase = adminTeamPath(teamSlug, "agents");
+  const userId = String(formData.get("userId") ?? "").trim();
+  const monthStartsOn = parseSegmentMonthStartsOn(String(formData.get("segmentMonth") ?? ""));
+  const workPercentage = parseSegmentWorkPercentage(formData.get("segmentWorkPercentage"));
+
+  if (!userId || !monthStartsOn || workPercentage === null) {
+    redirect(
+      `${userId ? `${agentsBase}/${userId}` : agentsBase}?error=` +
+        encodeURIComponent("Mois (AAAA-MM) et pourcentage valides sont obligatoires."),
+    );
+  }
+
+  await prisma.userWorkRateSegment.upsert({
+    where: { userId_monthStartsOn: { userId, monthStartsOn } },
+    create: { userId, monthStartsOn, workPercentage },
+    update: { workPercentage },
+  });
+
+  await revalidateWorkRateReporting(teamSlug, userId);
+  redirect(`${agentsBase}/${userId}?segmentSaved=1`);
+}
+
+export async function deleteUserWorkRateSegment(formData: FormData) {
+  await requireStaffAdmin();
+  const teamSlug = teamSlugFromForm(formData);
+  const agentsBase = adminTeamPath(teamSlug, "agents");
+  const userId = String(formData.get("userId") ?? "").trim();
+  const segmentId = String(formData.get("segmentId") ?? "").trim();
+  if (!userId || !segmentId) {
+    redirect(`${agentsBase}?error=` + encodeURIComponent("Segment invalide."));
+  }
+
+  const existing = await prisma.userWorkRateSegment.findFirst({
+    where: { id: segmentId, userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    redirect(`${agentsBase}/${userId}?error=` + encodeURIComponent("Segment introuvable."));
+  }
+
+  await prisma.userWorkRateSegment.delete({ where: { id: segmentId } });
+  await revalidateWorkRateReporting(teamSlug, userId);
+  redirect(`${agentsBase}/${userId}?segmentDeleted=1`);
+}
+
 function parseTemplateNumber(raw: FormDataEntryValue | null): number | null {
   const str = String(raw ?? "").trim();
   if (!str) return null;
@@ -231,6 +304,8 @@ export async function updateAgentTeamMemberships(formData: FormData) {
           planningGroupColor: null,
           displayOrder: 0,
           planningTemplateNumber: null,
+          showInTeamPlanning: true,
+          showInAdminPlanning: true,
         },
       });
     }
@@ -313,7 +388,16 @@ export async function updateAgent(formData: FormData) {
   const alternancePartnerId = isAlternant ? alternancePartnerIdRaw : null;
   const planningRhProfile = parsePlanningRhProfile(formData.get("planningRhProfile"));
   const role = parseRole(String(formData.get("role") ?? existing.role), actor, existing.role);
-  const displayOrder = Number(formData.get("displayOrder") ?? existing.displayOrder);
+  const ctxMembership =
+    teamRecord
+      ? await prisma.userTeam.findUnique({
+          where: { userId_teamId: { userId: id, teamId: teamRecord.id } },
+          select: { displayOrder: true },
+        })
+      : null;
+  const preservedTeamDisplayOrder = ctxMembership?.displayOrder ?? existing.displayOrder;
+  const showInTeamPlanning = String(formData.get("showInTeamPlanning") ?? "") === "on";
+  const showInAdminPlanning = String(formData.get("showInAdminPlanning") ?? "") === "on";
 
   const requestedSkillIds = formData.getAll("skillIds").map(String).filter(Boolean);
 
@@ -372,7 +456,7 @@ export async function updateAgent(formData: FormData) {
       planningGroupLabelB: isAlternant ? planningGroupLabelB : null,
       alternancePartnerId,
       role,
-      displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+      displayOrder: existing.displayOrder,
     };
 
     const runUpdateTx = async (includeRhProfile: boolean) =>
@@ -418,7 +502,7 @@ export async function updateAgent(formData: FormData) {
               isPrimary: !(await tx.userTeam.findFirst({ where: { userId: id } })),
               planningGroupLabel,
               planningGroupColor,
-              displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+              displayOrder: preservedTeamDisplayOrder,
               planningTemplateNumber,
               planningTemplateNumberA: isAlternant ? planningTemplateNumberA : null,
               planningTemplateNumberB: isAlternant ? planningTemplateNumberB : null,
@@ -429,7 +513,7 @@ export async function updateAgent(formData: FormData) {
               roleInTeam: role,
               planningGroupLabel,
               planningGroupColor,
-              displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+              displayOrder: preservedTeamDisplayOrder,
               planningTemplateNumber,
               planningTemplateNumberA: isAlternant ? planningTemplateNumberA : null,
               planningTemplateNumberB: isAlternant ? planningTemplateNumberB : null,
@@ -437,6 +521,12 @@ export async function updateAgent(formData: FormData) {
               planningGroupLabelB: isAlternant ? planningGroupLabelB : null,
             },
           });
+          // Hors upsert : évite « Unknown argument » si le client Prisma chargé par Next est plus ancien que le schéma.
+          await tx.$executeRaw`
+            UPDATE "UserTeam"
+            SET "showInTeamPlanning" = ${showInTeamPlanning}, "showInAdminPlanning" = ${showInAdminPlanning}
+            WHERE "userId" = ${id} AND "teamId" = ${teamRecord.id}
+          `;
         }
         await tx.userSkill.deleteMany({ where: { userId: id } });
         if (validSkillIds.length) {

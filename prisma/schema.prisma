@@ -158,10 +158,27 @@ model User {
   planningCommentsCreated PlanningComment[] @relation("PlanningCommentCreator")
   commentaryEntriesCreated CommentaryEntry[] @relation("CommentaryEntryCreator")
   followUpEntriesCreated FollowUpEntry[] @relation("FollowUpEntryCreator")
+  googleCalendarAccount GoogleCalendarAccount?
   /// Appartenance(s) de l'utilisateur aux équipes (IDE jour/nuit, AS jour/nuit, ...)
   teams          UserTeam[]
+  /// Changements de % temps de travail au 1er du mois (mois pleins). Hors segment → `workPercentage`.
+  workRateSegments UserWorkRateSegment[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+}
+
+/// Pourcentage de temps de travail applicable au mois civil entier, à partir du 1er (UTC).
+model UserWorkRateSegment {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  monthStartsOn  DateTime @db.Date
+  workPercentage Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, monthStartsOn])
+  @@index([userId])
 }
 
 /// Équipe fonctionnelle du service (IDE jour, IDE nuit, AS jour, AS nuit, ...).
@@ -184,6 +201,7 @@ model Team {
   members      UserTeam[]
   templates    PlanningTemplate[]
   weeks        PlanningWeek[]
+  shiftTypes   ShiftType[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 }
@@ -219,6 +237,10 @@ model UserTeam {
   planningGroupLabelA     String?
   /// Bloc/équipe pendant l'état B
   planningGroupLabelB     String?
+  /// Afficher la ligne dans « Planning équipe » (consultation)
+  showInTeamPlanning      Boolean  @default(true)
+  /// Afficher la ligne dans la grille planning admin (édition mensuelle)
+  showInAdminPlanning     Boolean  @default(true)
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   team                    Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   createdAt               DateTime @default(now())
@@ -247,7 +269,9 @@ model UserSkill {
 
 model ShiftType {
   id          String       @id @default(cuid())
-  code        String       @unique
+  teamId      String
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  code        String
   label       String
   color       String
   startsAt    String
@@ -258,6 +282,9 @@ model ShiftType {
   skills      ShiftSkill[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  @@unique([teamId, code])
+  @@index([teamId])
 }
 
 model ShiftSkill {
@@ -311,6 +338,8 @@ model PlanningTemplate {
   label      String
   /// Durée du cycle en semaines (la trame contient cycleWeeks * 7 entrées)
   cycleWeeks Int                     @default(52)
+  /// Jour calendaire du début du cycle (jour 0 de la grille). Null = ancrage global legacy (2026-03-02).
+  cycleStartDate DateTime?           @db.Date
   team       Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
   entries    PlanningTemplateEntry[]
   createdAt  DateTime                @default(now())
@@ -440,4 +469,18 @@ model FollowUpEntry {
   @@index([createdAt])
   @@index([createdById])
   @@index([nextDate])
+}
+
+model GoogleCalendarAccount {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  googleSubject     String?
+  googleEmail       String?
+  accessToken       String
+  refreshToken      String
+  accessTokenExpiry DateTime?
+  scope             String?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

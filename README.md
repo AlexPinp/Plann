@@ -1,4 +1,4 @@
-## Planner SAU
+## Plann
 
 Application de gestion de planning pour equipe infirmiere en service d'urgence.
 
@@ -22,6 +22,8 @@ Puis remplir:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_SITE_URL`
+- `GOOGLE_OAUTH_CLIENT_ID` (pour l'export Google Agenda auto)
+- `GOOGLE_OAUTH_CLIENT_SECRET` (pour l'export Google Agenda auto)
 
 3) Generer le client Prisma:
 

@@ -7,6 +7,11 @@ const LEAVE_CODES_EXCLUDED_FROM_WORKED_HOURS = new Set(["CA", "CF", "CH", "RTT"]
 
 const ROLLING_DAYS = 7;
 const WEEKLY_HOURS_LIMIT = 48;
+const SHIFT_TYPE_SELECT = {
+  code: true,
+  startsAt: true,
+  endsAt: true,
+} as const;
 
 function addUtcDays(d: Date, days: number): Date {
   const x = new Date(d);
@@ -56,7 +61,7 @@ export async function findRolling7DayHoursViolations(options: {
       date: { gte: ext, lte: monthRangeEnd },
     },
     include: {
-      shiftType: true,
+      shiftType: { select: SHIFT_TYPE_SELECT },
       user: { select: { id: true, firstName: true, lastName: true } },
     },
   });

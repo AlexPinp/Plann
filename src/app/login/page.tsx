@@ -17,7 +17,7 @@ function LoginForm() {
     <main className="flex min-h-screen items-center justify-center bg-zinc-100 p-4">
       <div className="w-full max-w-sm">
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-          <h1 className="text-center text-2xl font-bold text-zinc-900">Planner SAU</h1>
+          <h1 className="text-center text-2xl font-bold text-zinc-900">Plann</h1>
           <p className="mt-1 text-center text-xs text-zinc-500">Service d&apos;Accueil des Urgences</p>
 
           {registered && (

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
@@ -31,6 +30,16 @@ import {
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
 import { ExportPdfButton } from "../organisation/ExportPdfButton";
+import { MonthNavigator } from "@/components/MonthNavigator";
+
+const SHIFT_TYPE_SELECT = {
+  id: true,
+  code: true,
+  label: true,
+  color: true,
+  startsAt: true,
+  endsAt: true,
+} as const;
 
 const DOW_SHORT = ["D", "L", "M", "M", "J", "V", "S"];
 const MONTH_OPTIONS = [
@@ -96,6 +105,7 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
     const isWeekend = dt.getUTCDay() === 0 || dt.getUTCDay() === 6;
     return { key, dayNum, dow, isWeekend };
   });
+  const todayKey = format(new Date(), "yyyy-MM-dd");
 
   const weekStartsInMonth: Date[] = [];
   {
@@ -110,7 +120,7 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
   }
 
   const members = await prisma.userTeam.findMany({
-    where: { teamId: team.id, user: { active: true } },
+    where: { teamId: team.id, user: { active: true }, showInTeamPlanning: true },
     include: { user: true },
     orderBy: [{ planningGroupLabel: "asc" }, { displayOrder: "asc" }, { user: { lastName: "asc" } }],
   });
@@ -124,9 +134,13 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
         userId: { not: null },
         planningWeek: { teamId: team.id },
       },
-      include: { shiftType: true },
+      include: { shiftType: { select: SHIFT_TYPE_SELECT } },
     }),
-    prisma.shiftType.findMany({ orderBy: { code: "asc" } }),
+    prisma.shiftType.findMany({
+      where: { teamId: team.id },
+      select: SHIFT_TYPE_SELECT,
+      orderBy: { code: "asc" },
+    }),
     prisma.planningWeek.findMany({
       where: { teamId: team.id, weekStart: { in: weekStartsInMonth } },
     }),
@@ -191,8 +205,10 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
   }
   const templateShiftByNumberAndOffset: Record<string, string> = {};
   const cycleWeeksByTemplateNumber = new Map<number, number>();
+  const cycleStartDateByTemplateNumber = new Map<number, Date | null>();
   for (const template of templates) {
     cycleWeeksByTemplateNumber.set(template.number, normalizeTemplateCycleWeeks(template.cycleWeeks));
+    cycleStartDateByTemplateNumber.set(template.number, template.cycleStartDate);
     for (const entry of template.entries) {
       if (!entry.shiftTypeId) continue;
       templateShiftByNumberAndOffset[`${template.number}|${entry.dayOffset}`] = entry.shiftTypeId;
@@ -219,12 +235,12 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
   const equipePath = workspacePath(team.slug, "planning-equipe");
 
   return (
-    <main className="mx-auto w-full max-w-[98vw] flex-1 p-3 sm:p-4 md:p-6 print:max-w-none print:p-0">
+    <main className="mx-auto w-full max-w-[99vw] flex-1 p-2 sm:p-3 md:p-4 print:max-w-none print:p-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Planning equipe</h1>
+          <h1 className="text-xl font-semibold text-[var(--text)]">Planning equipe</h1>
           {allValidated ? (
-            <p className="flex items-center gap-1.5 text-sm text-green-700">
+            <p className="flex items-center gap-1.5 text-sm text-[var(--success)]">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" /></svg>
               Validé le{" "}
               {latestValidation?.validatedAt
@@ -233,71 +249,40 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
               par <strong className="ml-0.5">{latestValidation?.validatedByName ?? "—"}</strong>
             </p>
           ) : (
-            <p className="flex items-center gap-1.5 text-sm text-amber-700">
+            <p className="flex items-center gap-1.5 text-sm text-[var(--warning)]">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
               Prévisionnel &mdash; planning basé sur les trames, en attente de validation
             </p>
           )}
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <Link
-            href={`${equipePath}?year=${prev.y}&month=${prev.m}`}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            &larr;
-          </Link>
-          <span className="min-w-[140px] text-center text-sm font-semibold capitalize text-zinc-800">
-            {monthLabel}
-          </span>
-          <Link
-            href={`${equipePath}?year=${next.y}&month=${next.m}`}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            &rarr;
-          </Link>
-          <form action={equipePath} method="get" className="ml-1 flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
-            <select
-              name="month"
-              defaultValue={String(m)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 sm:w-auto"
-            >
-              {MONTH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <select
-              name="year"
-              defaultValue={String(y)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 sm:w-auto"
-            >
-              {yearOptions.map((yy) => (
-                <option key={yy} value={yy}>
-                  {yy}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 sm:w-auto"
-            >
-              Aller
-            </button>
-          </form>
-          <div className="print:hidden">
-            <ExportPdfButton />
-          </div>
-        </div>
+        <MonthNavigator
+          basePath={equipePath}
+          monthLabel={monthLabel}
+          currentMonth={m}
+          currentYear={y}
+          prev={prev}
+          next={next}
+          monthOptions={MONTH_OPTIONS}
+          yearOptions={yearOptions}
+          actions={
+            <div className="print:hidden">
+              <ExportPdfButton />
+            </div>
+          }
+        />
       </div>
 
-      <div className="max-h-[85vh] overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm print:max-h-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none print:[&_*.sticky]:!static">
+      <div className="mx-auto w-fit max-w-full rounded-xl border border-[var(--border)] bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
+        <div className="border-b border-[var(--border)] px-3 py-2 text-center text-sm font-semibold capitalize text-[var(--text)] print:hidden">
+           {monthLabel}
+        </div>
+        <div className="max-h-[85vh] overflow-auto print:max-h-none print:overflow-visible print:[&_*.sticky]:!static">
         <table className="min-w-max border-collapse text-[11px]">
           <thead>
-            <tr className="bg-zinc-100">
+            <tr className="bg-[var(--surface-soft)]">
               <th
                 rowSpan={2}
-                className="sticky left-0 top-0 z-40 min-w-[140px] border border-zinc-300 bg-zinc-100 px-2 py-1 text-left font-semibold text-zinc-800"
+                className="sticky left-0 top-0 z-40 min-w-[150px] border border-[var(--border)] bg-[var(--surface-soft)] px-2 py-1 text-left font-semibold text-[var(--text)]"
               >
                 Agent
               </th>
@@ -305,21 +290,29 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
                 <th
                   key={`dow-${d.key}`}
                   className={[
-                    "sticky top-0 z-30 min-w-[34px] border border-zinc-300 px-0.5 py-1 text-center font-semibold",
-                    d.isWeekend ? "bg-zinc-200 text-zinc-500" : "bg-zinc-100 text-zinc-700",
+                    "sticky top-0 z-30 min-w-[34px] border border-[var(--border)] px-0.5 py-1 text-center font-semibold",
+                    d.key === todayKey
+                      ? "bg-[var(--primary-soft)] text-[var(--primary-hover)]"
+                      : d.isWeekend
+                        ? "bg-[#efefef] text-[var(--text-muted)]"
+                        : "bg-[var(--surface-soft)] text-[#333333]",
                   ].join(" ")}
                 >
                   {d.dow}
                 </th>
               ))}
             </tr>
-            <tr className="bg-zinc-50">
+            <tr className="bg-white">
               {days.map((d) => (
                 <th
                   key={`num-${d.key}`}
                   className={[
-                    "sticky top-[28px] z-30 border border-zinc-300 px-0.5 py-1 text-center font-medium",
-                    d.isWeekend ? "bg-zinc-200 text-zinc-500" : "bg-zinc-50 text-zinc-800",
+                    "sticky top-[28px] z-30 border border-[var(--border)] px-0.5 py-1 text-center font-medium",
+                    d.key === todayKey
+                      ? "bg-[var(--primary-soft)] text-[var(--primary-hover)]"
+                      : d.isWeekend
+                        ? "bg-[#efefef] text-[var(--text-muted)]"
+                        : "bg-white text-[var(--text)]",
                   ].join(" ")}
                 >
                   {d.dayNum}
@@ -330,10 +323,10 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
           <tbody>
             {groups.map((group) => (
               <Fragment key={`group-${group.label}`}>
-                <tr key={`g-${group.label}`} className="bg-zinc-200">
+                <tr key={`g-${group.label}`} className="bg-[var(--surface-soft)]">
                   <td
                     colSpan={days.length + 1}
-                    className="sticky left-0 z-20 border border-zinc-300 px-2 py-1 font-semibold text-zinc-800"
+                    className="sticky left-0 z-20 border border-[var(--border)] px-2 py-1 font-semibold text-[var(--text)]"
                     style={{ backgroundColor: group.color }}
                   >
                     {group.label}
@@ -344,9 +337,9 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
                   const cfgU = planningConfigFromUserOrTeam(u, membership);
                   const timingU = alternanceTimingFromUser(u);
                   return (
-                  <tr key={u.id} className="hover:bg-zinc-50/80">
+                  <tr key={u.id} className="hover:bg-[var(--surface-soft)]">
                     <td
-                      className="sticky left-0 z-20 whitespace-nowrap border border-zinc-200 px-2 py-0.5 font-medium text-zinc-900"
+                      className="sticky left-0 z-20 whitespace-nowrap border border-[var(--border)] px-2 py-0.5 font-medium text-[var(--text)]"
                       style={{ backgroundColor: group.color }}
                     >
                       {u.lastName.toUpperCase()} {u.firstName}
@@ -363,7 +356,11 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
                       const cycleW = effectiveTemplateNumber
                         ? cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS
                         : 6;
-                      const dayOffset = getTemplateDayOffsetForCycle(currentDate, cycleW);
+                      const cycleStart =
+                        effectiveTemplateNumber != null
+                          ? cycleStartDateByTemplateNumber.get(effectiveTemplateNumber) ?? null
+                          : null;
+                      const dayOffset = getTemplateDayOffsetForCycle(currentDate, cycleW, cycleStart);
                       const templateShiftId = effectiveTemplateNumber
                         ? templateShiftByNumberAndOffset[`${effectiveTemplateNumber}|${dayOffset}`]
                         : undefined;
@@ -393,8 +390,9 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
                         <td
                           key={`${u.id}-${d.key}`}
                           className={[
-                            "border border-zinc-200 px-0.5 py-0.5 text-center font-bold text-zinc-900",
-                            d.isWeekend && !effectiveShift ? "bg-zinc-100" : "",
+                            "border border-[var(--border)] px-0.5 py-0.5 text-center font-semibold text-[var(--text)]",
+                            d.key === todayKey && !effectiveShift ? "bg-[var(--primary-soft)]" : "",
+                            d.isWeekend && !effectiveShift ? "bg-[#f1f1f1]" : "",
                             !dayValidated && !isStaff ? "opacity-70" : "",
                           ].join(" ")}
                           style={effectiveShift ? { backgroundColor: effectiveShift.color } : undefined}
@@ -408,9 +406,9 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
                           }
                         >
                           <div className="flex flex-col items-center gap-0.5">
-                            <span>{effectiveShift ? effectiveShift.code : ""}</span>
+                            <span className="font-hours text-[10px]">{effectiveShift ? effectiveShift.code : ""}</span>
                             {visibleComments.length > 0 ? (
-                              <span className="inline-flex items-center rounded border border-sky-300 bg-sky-100 px-1 text-[9px] font-semibold text-sky-700">
+                              <span className="inline-flex items-center rounded border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-1 text-[9px] font-semibold text-[var(--primary-hover)]">
                                 {firstCommentType ? planningCommentTypeBadge(firstCommentType) : "CM"}
                                 {visibleComments.length > 1 ? `+${visibleComments.length - 1}` : ""}
                               </span>
@@ -426,6 +424,7 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </main>
   );

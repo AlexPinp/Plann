@@ -19,6 +19,8 @@ import { getTeamBySlug } from "@/lib/team";
 import { workspacePath } from "@/lib/routes";
 import { PlanningStatus } from "@/generated/prisma/enums";
 import { canEditPlanningAndStaff } from "@/lib/user-roles";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isGoogleCalendarLinked } from "@/lib/google-calendar";
 import {
   canViewPlanningComment,
   planningCommentStatusLabel,
@@ -29,8 +31,18 @@ import {
   type PlanningCommentType,
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
+import { shiftEndsNextCalendarDay } from "@/lib/time-hhmm";
 import { ExportPdfButton } from "../organisation/ExportPdfButton";
 import { GoogleCalendarExportButton } from "./GoogleCalendarExportButton";
+
+const SHIFT_TYPE_SELECT = {
+  id: true,
+  code: true,
+  label: true,
+  color: true,
+  startsAt: true,
+  endsAt: true,
+} as const;
 
 const MONTH_OPTIONS = [
   { value: 1, label: "Janvier" },
@@ -92,6 +104,20 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
 
   const sp = await searchParams;
   const { y, m } = parseMonth(sp);
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  const appMetaProviders = Array.isArray(authUser?.app_metadata?.providers)
+    ? authUser.app_metadata.providers
+    : [];
+  const identityProviders =
+    (authUser as { identities?: Array<{ provider?: string }> } | null)?.identities
+      ?.map((identity) => identity.provider)
+      .filter((provider): provider is string => typeof provider === "string") ?? [];
+  const hasSavedGoogleTokens = await isGoogleCalendarLinked(me.id);
+  const isGoogleLinked =
+    appMetaProviders.includes("google") || identityProviders.includes("google") || hasSavedGoogleTokens;
 
   const myTeamRow = await prisma.userTeam.findUnique({
     where: { userId_teamId: { userId: me.id, teamId: team.id } },
@@ -135,10 +161,14 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
         date: { gte: rangeStart, lte: rangeEnd },
         planningWeek: { teamId: team.id },
       },
-      include: { shiftType: true },
+      include: { shiftType: { select: SHIFT_TYPE_SELECT } },
       orderBy: { date: "asc" },
     }),
-    prisma.shiftType.findMany({ orderBy: { code: "asc" } }),
+    prisma.shiftType.findMany({
+      where: { teamId: team.id },
+      select: SHIFT_TYPE_SELECT,
+      orderBy: { code: "asc" },
+    }),
     myTemplateNumbers.length
       ? prisma.planningTemplate.findMany({
           where: { teamId: team.id, number: { in: myTemplateNumbers } },
@@ -193,8 +223,10 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
   }
   const templateShiftByNumberAndOffset = new Map<string, string>();
   const cycleWeeksByTemplateNumber = new Map<number, number>();
+  const cycleStartDateByTemplateNumber = new Map<number, Date | null>();
   for (const template of myTemplates) {
     cycleWeeksByTemplateNumber.set(template.number, normalizeTemplateCycleWeeks(template.cycleWeeks));
+    cycleStartDateByTemplateNumber.set(template.number, template.cycleStartDate);
     for (const entry of template.entries) {
       if (entry.shiftTypeId) templateShiftByNumberAndOffset.set(`${template.number}|${entry.dayOffset}`, entry.shiftTypeId);
     }
@@ -235,7 +267,11 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
     const cycleW = effectiveTemplateNumber
       ? cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS
       : 6;
-    const offset = getTemplateDayOffsetForCycle(date, cycleW);
+    const cycleStart =
+      effectiveTemplateNumber != null
+        ? cycleStartDateByTemplateNumber.get(effectiveTemplateNumber) ?? null
+        : null;
+    const offset = getTemplateDayOffsetForCycle(date, cycleW, cycleStart);
     const templateShiftId = effectiveTemplateNumber
       ? templateShiftByNumberAndOffset.get(`${effectiveTemplateNumber}|${offset}`)
       : undefined;
@@ -258,10 +294,10 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
 
     for (const assignment of displayAssignments) {
       const shift = assignment.shiftType;
-      const endDate =
-        shift.endsAt <= shift.startsAt
-          ? `${new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCMonth() + 1).padStart(2, "0")}-${String(new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0)).getUTCDate()).padStart(2, "0")}`
-          : key;
+      const nextDay = new Date(Date.UTC(y, m - 1, dayNum + 1, 12, 0, 0));
+      const endDate = shiftEndsNextCalendarDay(shift.startsAt, shift.endsAt)
+        ? `${nextDay.getUTCFullYear()}-${String(nextDay.getUTCMonth() + 1).padStart(2, "0")}-${String(nextDay.getUTCDate()).padStart(2, "0")}`
+        : key;
       googleCalendarEvents.push({
         id: `${assignment.id}-${key}`,
         date: key,
@@ -276,14 +312,25 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 p-4 md:p-8 print:max-w-none print:p-0">
+    <main className="mx-auto w-full max-w-5xl flex-1 p-4 md:p-8 print:max-w-none print:p-0">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Mon planning</h1>
-          <p className="text-sm text-zinc-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-zinc-600">
             {me.lastName.toUpperCase()} {me.firstName} &mdash;{" "}
             <span className="capitalize">{monthLabel}</span>
-          </p>
+            </p>
+            <span
+              className={[
+                "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                isGoogleLinked ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
+              ].join(" ")}
+              title={isGoogleLinked ? "Compte Google lie" : "Compte Google non lie"}
+            >
+              Google {isGoogleLinked ? "lie" : "non lie"}
+            </span>
+          </div>
           {allValidated ? (
             <p className="mt-1 flex items-center gap-1.5 text-xs text-green-700">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" /></svg>
@@ -346,7 +393,11 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
               Aller
             </button>
           </form>
-          <GoogleCalendarExportButton events={googleCalendarEvents} />
+          <GoogleCalendarExportButton
+            teamSlug={teamSlug}
+            events={googleCalendarEvents}
+            isGoogleLinked={isGoogleLinked}
+          />
           <div className="print:hidden">
             <ExportPdfButton />
           </div>
@@ -364,7 +415,7 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
 
         <div className="grid grid-cols-7">
           {Array.from({ length: blanks }).map((_, i) => (
-            <div key={`blank-${i}`} className="border-b border-r border-zinc-100 bg-zinc-50/50 p-1" style={{ minHeight: 72 }} />
+            <div key={`blank-${i}`} className="border-b border-r border-zinc-100 bg-zinc-50/50 p-1.5" style={{ minHeight: 92 }} />
           ))}
 
           {Array.from({ length: lastDay }, (_, i) => {
@@ -385,7 +436,11 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
             const cycleW = effectiveTemplateNumber
               ? cycleWeeksByTemplateNumber.get(effectiveTemplateNumber) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS
               : 6;
-            const offset = getTemplateDayOffsetForCycle(date, cycleW);
+            const cycleStart =
+              effectiveTemplateNumber != null
+                ? cycleStartDateByTemplateNumber.get(effectiveTemplateNumber) ?? null
+                : null;
+            const offset = getTemplateDayOffsetForCycle(date, cycleW, cycleStart);
             const templateShiftId = effectiveTemplateNumber
               ? templateShiftByNumberAndOffset.get(`${effectiveTemplateNumber}|${offset}`)
               : undefined;
@@ -422,12 +477,12 @@ export default async function MyPlanningPage({ params, searchParams }: Props) {
               <div
                 key={key}
                 className={[
-                  "border-b border-r border-zinc-100 p-1",
+                  "border-b border-r border-zinc-100 p-1.5",
                   isWeekend ? "bg-zinc-50/80" : "bg-white",
                   isToday ? "ring-2 ring-inset ring-blue-400" : "",
                   !dayValidated && !isStaff ? "opacity-70" : "",
                 ].join(" ")}
-                style={{ minHeight: 72 }}
+                style={{ minHeight: 92 }}
               >
                 <div className={[
                   "mb-0.5 text-right text-[11px] font-medium",

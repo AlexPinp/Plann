@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { format } from "date-fns";
+import { fr } from "date-fns/locale";
 import { notFound } from "next/navigation";
 import { TeamJob, TeamRhythm, UserRole } from "@/generated/prisma/enums";
 import { ColorPicker } from "@/components/ColorPicker";
@@ -9,7 +11,14 @@ import { getAllTeams, getTeamBySlug } from "@/lib/team";
 import { getEditableTeamIds, roleLabelsFr } from "@/lib/user-roles";
 import { adminTeamPath } from "@/lib/routes";
 import { normalizeTemplateCycleWeeks } from "@/lib/planning-template";
-import { setAgentActive, updateAgent, updateAgentTeamMemberships } from "../actions";
+import {
+  deleteUserWorkRateSegment,
+  setAgentActive,
+  updateAgent,
+  updateAgentTeamMemberships,
+  upsertUserWorkRateSegment,
+} from "../actions";
+import { AlternanceDetailsCollapsible } from "../AlternanceDetailsCollapsible";
 
 function teamAxisShortLabel(team: { job: TeamJob; rhythm: TeamRhythm }): string {
   const job = team.job === TeamJob.IDE ? "IDE" : "AS";
@@ -31,6 +40,8 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
   const sp = await searchParams;
   const error = typeof sp.error === "string" ? sp.error : undefined;
   const teamsUpdated = sp.teamsUpdated === "1";
+  const segmentSaved = sp.segmentSaved === "1";
+  const segmentDeleted = sp.segmentDeleted === "1";
 
   const [user, allSkills, templatesMeta, allUsers, axisTeams, editableTeamIds, userTeamRows] = await Promise.all([
     prisma.user.findUnique({
@@ -61,6 +72,11 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
     where: { userId_teamId: { userId: id, teamId: team.id } },
   });
 
+  const workRateSegments = await prisma.userWorkRateSegment.findMany({
+    where: { userId: id },
+    orderBy: { monthStartsOn: "desc" },
+  });
+
   const userSkillIds = new Set(user.skills.map((us) => us.skillId));
   const agentsListPath = adminTeamPath(team.slug, "agents");
 
@@ -71,7 +87,8 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
   const effTrameB = membership?.planningTemplateNumberB ?? user.planningTemplateNumberB;
   const effLabelA = membership?.planningGroupLabelA ?? user.planningGroupLabelA;
   const effLabelB = membership?.planningGroupLabelB ?? user.planningGroupLabelB;
-  const effDisplayOrder = membership?.displayOrder ?? user.displayOrder;
+  const showInTeamPlanning = membership?.showInTeamPlanning ?? true;
+  const showInAdminPlanning = membership?.showInAdminPlanning ?? true;
   const effRole = membership?.roleInTeam ?? user.role;
   const showRolePicker = actor.role === UserRole.ADMIN;
   const templateMetaByNumber = new Map(templatesMeta.map((t) => [t.number, t]));
@@ -103,87 +120,20 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
           Rattachements equipes mis a jour.
         </p>
       )}
+      {segmentSaved && (
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Segment de temps de travail enregistré (répartition mensuelle pour les rapports Droits).
+        </p>
+      )}
+      {segmentDeleted && (
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Segment supprimé.</p>
+      )}
 
       {user.authUserId && (
         <p className="mt-3 text-sm text-amber-800">
           Compte deja lie a Supabase : l&apos;email ne peut pas etre modifie ici.
         </p>
       )}
-
-      <section className="mt-6 max-w-2xl rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Activation du compte agent</h2>
-        <p className="mt-1 text-xs text-zinc-600">
-          La desactivation/reactivation se fait ici.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {user.active ? (
-            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800">Actif</span>
-          ) : (
-            <span className="rounded-md bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800">Inactif</span>
-          )}
-          <form action={setAgentActive}>
-            <input type="hidden" name="teamSlug" value={team.slug} />
-            <input type="hidden" name="id" value={user.id} />
-            <input type="hidden" name="active" value={user.active ? "false" : "true"} />
-            <button
-              type="submit"
-              className={[
-                "rounded-lg px-4 py-2 text-sm font-medium",
-                user.active
-                  ? "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                  : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-              ].join(" ")}
-            >
-              {user.active ? "Desactiver l'agent" : "Reactiver l'agent"}
-            </button>
-          </form>
-        </div>
-      </section>
-
-      <section className="mt-6 max-w-2xl rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Rattachement IDE/AS · jour/nuit</h2>
-        <p className="mt-1 text-xs text-zinc-600">
-          Cochez toutes les equipes auxquelles la personne appartient. Les cases grisees ne sont pas modifiables avec vos
-          droits.
-        </p>
-        <form action={updateAgentTeamMemberships} className="mt-4">
-          <input type="hidden" name="teamSlug" value={team.slug} />
-          <input type="hidden" name="userId" value={user.id} />
-          <input type="hidden" name="afterMembership" value="detail" />
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {axisTeams.map((t) => {
-              const checked = teamIdsForUser.has(t.id);
-              const canEdit = editableTeamIds.includes(t.id);
-              return (
-                <label
-                  key={t.id}
-                  className={[
-                    "flex cursor-pointer items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50/80 px-2 py-1.5 text-xs text-zinc-800",
-                    !canEdit ? "cursor-not-allowed opacity-50" : "",
-                  ].join(" ")}
-                  title={t.label}
-                >
-                  <input
-                    type="checkbox"
-                    name="membershipTeamId"
-                    value={t.id}
-                    defaultChecked={checked}
-                    disabled={!canEdit}
-                    className="rounded border-zinc-300"
-                  />
-                  <span>{teamAxisShortLabel(t)}</span>
-                </label>
-              );
-            })}
-          </div>
-          <button
-            type="submit"
-            className="mt-4 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
-          >
-            Enregistrer les equipes
-          </button>
-        </form>
-      </section>
 
       <form action={updateAgent} className="mt-6 max-w-2xl space-y-5 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <input type="hidden" name="teamSlug" value={team.slug} />
@@ -216,7 +166,9 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-xs font-medium text-zinc-600" htmlFor="workPercentage">Temps de travail (%)</label>
+            <label className="text-xs font-medium text-zinc-600" htmlFor="workPercentage">
+              Temps de travail (%) — défaut hors segments
+            </label>
             <select id="workPercentage" name="workPercentage" defaultValue={user.workPercentage} className="mt-1 w-full appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm">
               <option value={100}>100 %</option>
               <option value={90}>90 %</option>
@@ -226,6 +178,10 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
               <option value={60}>60 %</option>
               <option value={50}>50 %</option>
             </select>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Utilisé pour tout mois antérieur au premier segment ou entre deux segments (voir « Historique temps de
+              travail » ci-dessous).
+            </p>
           </div>
           <div>
             <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabel">Bloc / equipe</label>
@@ -279,127 +235,164 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
             />
             Agent alternant (A/B)
           </label>
-          <p className="mt-1 text-[11px] text-zinc-600">
-            Configurez les 2 etats (A et B), la duree du cycle et le binome.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="alternanceCycleWeeks">Duree d&apos;un bloc (semaines)</label>
-              <input
-                id="alternanceCycleWeeks"
-                name="alternanceCycleWeeks"
-                type="number"
-                min={1}
-                max={52}
-                defaultValue={user.alternanceCycleWeeks}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="alternanceAnchorDate">Date d&apos;ancrage (debut cycle)</label>
-              <input
-                id="alternanceAnchorDate"
-                name="alternanceAnchorDate"
-                type="date"
-                defaultValue={anchorDateInputValue}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="alternancePhase">Phase binome</label>
-              <select
-                id="alternancePhase"
-                name="alternancePhase"
-                defaultValue={String(user.alternancePhase)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              >
-                <option value="0">Phase 0 (A au demarrage)</option>
-                <option value="1">Phase 1 (B au demarrage)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="alternancePartnerId">Binome alternant</label>
-              <select
-                id="alternancePartnerId"
-                name="alternancePartnerId"
-                defaultValue={user.alternancePartnerId ?? ""}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              >
-                <option value="">Aucun</option>
-                {potentialPartners.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.lastName.toUpperCase()} {candidate.firstName}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumberA">Trame A</label>
-              <select
-                id="planningTemplateNumberA"
-                name="planningTemplateNumberA"
-                defaultValue={effTrameA ?? ""}
-                className="mt-1 w-full appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm"
-              >
-                <option value="">Aucune</option>
-                {availableTemplateNumbers.map((n) => {
-                  const meta = templateMetaByNumber.get(n);
-                  return (
-                    <option key={`a-${n}`} value={n}>
-                      Trame {n}
-                      {meta ? ` (${normalizeTemplateCycleWeeks(meta.cycleWeeks)} sem.)` : ""}
+          <AlternanceDetailsCollapsible defaultOpen={user.isAlternant}>
+            <p className="text-[11px] text-zinc-600">
+              Configurez les 2 etats (A et B), la duree du cycle et le binome.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="alternanceCycleWeeks">
+                  Duree d&apos;un bloc (semaines)
+                </label>
+                <input
+                  id="alternanceCycleWeeks"
+                  name="alternanceCycleWeeks"
+                  type="number"
+                  min={1}
+                  max={52}
+                  defaultValue={user.alternanceCycleWeeks}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="alternanceAnchorDate">
+                  Date d&apos;ancrage (debut cycle)
+                </label>
+                <input
+                  id="alternanceAnchorDate"
+                  name="alternanceAnchorDate"
+                  type="date"
+                  defaultValue={anchorDateInputValue}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="alternancePhase">
+                  Phase binome
+                </label>
+                <select
+                  id="alternancePhase"
+                  name="alternancePhase"
+                  defaultValue={String(user.alternancePhase)}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  <option value="0">Phase 0 (A au demarrage)</option>
+                  <option value="1">Phase 1 (B au demarrage)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="alternancePartnerId">
+                  Binome alternant
+                </label>
+                <select
+                  id="alternancePartnerId"
+                  name="alternancePartnerId"
+                  defaultValue={user.alternancePartnerId ?? ""}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Aucun</option>
+                  {potentialPartners.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.lastName.toUpperCase()} {candidate.firstName}
                     </option>
-                  );
-                })}
-              </select>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumberA">
+                  Trame A
+                </label>
+                <select
+                  id="planningTemplateNumberA"
+                  name="planningTemplateNumberA"
+                  defaultValue={effTrameA ?? ""}
+                  className="mt-1 w-full appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm"
+                >
+                  <option value="">Aucune</option>
+                  {availableTemplateNumbers.map((n) => {
+                    const meta = templateMetaByNumber.get(n);
+                    return (
+                      <option key={`a-${n}`} value={n}>
+                        Trame {n}
+                        {meta ? ` (${normalizeTemplateCycleWeeks(meta.cycleWeeks)} sem.)` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumberB">
+                  Trame B
+                </label>
+                <select
+                  id="planningTemplateNumberB"
+                  name="planningTemplateNumberB"
+                  defaultValue={effTrameB ?? ""}
+                  className="mt-1 w-full appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm"
+                >
+                  <option value="">Aucune</option>
+                  {availableTemplateNumbers.map((n) => {
+                    const meta = templateMetaByNumber.get(n);
+                    return (
+                      <option key={`b-${n}`} value={n}>
+                        Trame {n}
+                        {meta ? ` (${normalizeTemplateCycleWeeks(meta.cycleWeeks)} sem.)` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabelA">
+                  Equipe / bloc A
+                </label>
+                <input
+                  id="planningGroupLabelA"
+                  name="planningGroupLabelA"
+                  defaultValue={effLabelA ?? ""}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabelB">
+                  Equipe / bloc B
+                </label>
+                <input
+                  id="planningGroupLabelB"
+                  name="planningGroupLabelB"
+                  defaultValue={effLabelB ?? ""}
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumberB">Trame B</label>
-              <select
-                id="planningTemplateNumberB"
-                name="planningTemplateNumberB"
-                defaultValue={effTrameB ?? ""}
-                className="mt-1 w-full appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm"
-              >
-                <option value="">Aucune</option>
-                {availableTemplateNumbers.map((n) => {
-                  const meta = templateMetaByNumber.get(n);
-                  return (
-                    <option key={`b-${n}`} value={n}>
-                      Trame {n}
-                      {meta ? ` (${normalizeTemplateCycleWeeks(meta.cycleWeeks)} sem.)` : ""}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabelA">Equipe / bloc A</label>
-              <input
-                id="planningGroupLabelA"
-                name="planningGroupLabelA"
-                defaultValue={effLabelA ?? ""}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabelB">Equipe / bloc B</label>
-              <input
-                id="planningGroupLabelB"
-                name="planningGroupLabelB"
-                defaultValue={effLabelB ?? ""}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
+          </AlternanceDetailsCollapsible>
         </div>
 
         <ColorPicker name="planningGroupColor" defaultValue={effBlocColor} />
 
-        <div>
-          <label className="text-xs font-medium text-zinc-600" htmlFor="displayOrder">Ordre d&apos;affichage</label>
-          <input id="displayOrder" name="displayOrder" type="number" min={0} defaultValue={effDisplayOrder} className="mt-1 w-32 rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
-          <p className="mt-1 text-[11px] text-zinc-500">Plus petit = plus haut dans la grille planning.</p>
+        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+          <p className="text-xs font-medium text-zinc-700">Visibilité sur les plannings ({team.label})</p>
+          <p className="mt-1 text-[11px] text-zinc-600">
+            La personne reste membre de l&apos;équipe ; seules les grilles ci-dessous masquent sa ligne si vous décochez.
+          </p>
+          <label className="mt-3 flex items-start gap-2 text-sm text-zinc-800">
+            <input
+              type="checkbox"
+              name="showInTeamPlanning"
+              defaultChecked={showInTeamPlanning}
+              className="mt-0.5 rounded border-zinc-300"
+            />
+            <span>Afficher dans le planning équipe (consultation)</span>
+          </label>
+          <label className="mt-2 flex items-start gap-2 text-sm text-zinc-800">
+            <input
+              type="checkbox"
+              name="showInAdminPlanning"
+              defaultChecked={showInAdminPlanning}
+              className="mt-0.5 rounded border-zinc-300"
+            />
+            <span>Afficher dans la grille planning admin (modifiable)</span>
+          </label>
         </div>
 
         {showRolePicker ? (
@@ -444,6 +437,161 @@ export default async function EditAgentPage({ params, searchParams }: Props) {
           <Link href={agentsListPath} className="text-sm text-zinc-500 hover:text-zinc-800">Annuler</Link>
         </div>
       </form>
+
+      <section className="mt-6 max-w-2xl rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          Historique temps de travail (mois pleins)
+        </h2>
+        <p className="mt-1 text-xs text-zinc-600">
+          Chaque ligne s&apos;applique à partir du <span className="font-medium">1er du mois choisi</span> jusqu&apos;au
+          mois précédant le prochain segment (sinon la valeur « défaut hors segments » du formulaire ci-dessus). Les
+          rapports Droits utilisent ces taux mois par mois sur l&apos;année.
+        </p>
+
+        {workRateSegments.length > 0 ? (
+          <ul className="mt-4 divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+            {workRateSegments.map((seg) => (
+              <li key={seg.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                <span className="font-medium text-zinc-900">
+                  {format(seg.monthStartsOn, "MMMM yyyy", { locale: fr })}
+                </span>
+                <span className="text-zinc-700">{seg.workPercentage} %</span>
+                <form action={deleteUserWorkRateSegment}>
+                  <input type="hidden" name="teamSlug" value={team.slug} />
+                  <input type="hidden" name="userId" value={user.id} />
+                  <input type="hidden" name="segmentId" value={seg.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50"
+                  >
+                    Supprimer
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-xs text-zinc-500">Aucun segment : tous les mois utilisent le pourcentage défaut.</p>
+        )}
+
+        <form action={upsertUserWorkRateSegment} className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-100 pt-4">
+          <input type="hidden" name="teamSlug" value={team.slug} />
+          <input type="hidden" name="userId" value={user.id} />
+          <div>
+            <label htmlFor="segmentMonth" className="text-xs font-medium text-zinc-600">
+              Mois de début (1er)
+            </label>
+            <input
+              id="segmentMonth"
+              name="segmentMonth"
+              type="month"
+              required
+              className="mt-1 block rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="segmentWorkPercentage" className="text-xs font-medium text-zinc-600">
+              Pourcentage
+            </label>
+            <select
+              id="segmentWorkPercentage"
+              name="segmentWorkPercentage"
+              required
+              defaultValue={80}
+              className="mt-1 block appearance-none rounded-lg border border-zinc-300 bg-none px-3 py-2 text-sm"
+            >
+              <option value={100}>100 %</option>
+              <option value={90}>90 %</option>
+              <option value={80}>80 %</option>
+              <option value={75}>75 %</option>
+              <option value={70}>70 %</option>
+              <option value={60}>60 %</option>
+              <option value={50}>50 %</option>
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="rounded-lg border border-zinc-900 bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          >
+            Enregistrer le segment
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Rattachement IDE/AS · jour/nuit</h2>
+        <p className="mt-1 text-xs text-zinc-600">
+          Cochez toutes les equipes auxquelles la personne appartient. Les cases grisees ne sont pas modifiables avec vos
+          droits.
+        </p>
+        <form action={updateAgentTeamMemberships} className="mt-4">
+          <input type="hidden" name="teamSlug" value={team.slug} />
+          <input type="hidden" name="userId" value={user.id} />
+          <input type="hidden" name="afterMembership" value="detail" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {axisTeams.map((t) => {
+              const checked = teamIdsForUser.has(t.id);
+              const canEdit = editableTeamIds.includes(t.id);
+              return (
+                <label
+                  key={t.id}
+                  className={[
+                    "flex cursor-pointer items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50/80 px-2 py-1.5 text-xs text-zinc-800",
+                    !canEdit ? "cursor-not-allowed opacity-50" : "",
+                  ].join(" ")}
+                  title={t.label}
+                >
+                  <input
+                    type="checkbox"
+                    name="membershipTeamId"
+                    value={t.id}
+                    defaultChecked={checked}
+                    disabled={!canEdit}
+                    className="rounded border-zinc-300"
+                  />
+                  <span>{teamAxisShortLabel(t)}</span>
+                </label>
+              );
+            })}
+          </div>
+          <button
+            type="submit"
+            className="mt-4 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+          >
+            Enregistrer les equipes
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Activation du compte agent</h2>
+        <p className="mt-1 text-xs text-zinc-600">
+          La desactivation/reactivation se fait ici.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {user.active ? (
+            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800">Actif</span>
+          ) : (
+            <span className="rounded-md bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800">Inactif</span>
+          )}
+          <form action={setAgentActive}>
+            <input type="hidden" name="teamSlug" value={team.slug} />
+            <input type="hidden" name="id" value={user.id} />
+            <input type="hidden" name="active" value={user.active ? "false" : "true"} />
+            <button
+              type="submit"
+              className={[
+                "rounded-lg px-4 py-2 text-sm font-medium",
+                user.active
+                  ? "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                  : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+              ].join(" ")}
+            >
+              {user.active ? "Desactiver l'agent" : "Reactiver l'agent"}
+            </button>
+          </form>
+        </div>
+      </section>
     </main>
   );
 }

@@ -1,14 +1,16 @@
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { notFound } from "next/navigation";
 import { getSessionPrismaUser } from "@/lib/current-user";
+import { DEFAULT_PLANNING_RH_PROFILE, planningRhProfileLabelsFr, planningRhRulesByProfile } from "@/lib/planning-rh";
+import { sumEffectiveWorkedHoursForTeamUserRange } from "@/lib/planning-recap-hours";
 import {
-  DEFAULT_PLANNING_RH_PROFILE,
-  isLeapYear,
-  planningRhProfileLabelsFr,
-  planningRhRulesByProfile,
-} from "@/lib/planning-rh";
+  averageAnnualWorkRatePercent,
+  monthlyRatesForYear,
+  weekdayCountInUtcMonth,
+} from "@/lib/work-rate-segments";
 import { prisma } from "@/lib/prisma";
-import { getShiftDurationHours } from "@/lib/shift-hours";
+import { getTeamBySlug } from "@/lib/team";
 import { canEditPlanningAndStaff, roleLabelsFr } from "@/lib/user-roles";
 import type { UserRole } from "@/generated/prisma/enums";
 
@@ -23,6 +25,7 @@ const FULL_TIME_WEEKLY_HOURS = 35;
 const LEAVE_CODES = ["CA", "CF", "CH", "RTT"] as const;
 
 type SearchProps = {
+  params: Promise<{ team: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -64,7 +67,11 @@ function getProgressTone(ratio: number) {
   return "bg-rose-500";
 }
 
-export default async function DroitsPage({ searchParams }: SearchProps) {
+export default async function DroitsPage({ params, searchParams }: SearchProps) {
+  const { team: teamSlug } = await params;
+  const team = await getTeamBySlug(teamSlug);
+  if (!team) notFound();
+
   const me = await getSessionPrismaUser();
   if (!me) {
     return (
@@ -120,52 +127,72 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
     );
   }
 
-  const assignmentsForMonth = await prisma.assignment.findMany({
-    where: {
-      userId: selectedUser.id,
-      date: { gte: monthStart, lte: monthEnd },
-    },
-    include: { shiftType: true },
-  });
-
-  const assignmentsForYearLeaves = await prisma.assignment.findMany({
-    where: {
-      userId: selectedUser.id,
-      date: { gte: yearStart, lte: yearEnd },
-    },
-    include: { shiftType: true },
-  });
+  const [assignmentsForYearLeaves, workRateSegments] = await Promise.all([
+    prisma.assignment.findMany({
+      where: {
+        userId: selectedUser.id,
+        date: { gte: yearStart, lte: yearEnd },
+        planningWeek: { teamId: team.id },
+      },
+      include: { shiftType: true },
+    }),
+    prisma.userWorkRateSegment.findMany({
+      where: { userId: selectedUser.id },
+      orderBy: { monthStartsOn: "asc" },
+    }),
+  ]);
 
   const weekdayCountInMonth = Array.from({ length: daysInMonth }, (_, i) => i + 1).filter((dayNum) =>
     isWeekday(new Date(Date.UTC(referenceYear, referenceMonth, dayNum, 12, 0, 0))),
   ).length;
-  const workRate = selectedUser.workPercentage / 100;
+
+  const monthlyRatesForYearArr = monthlyRatesForYear(
+    workRateSegments,
+    selectedUser.workPercentage,
+    referenceYear,
+  );
+  const selectedMonthWorkPct = monthlyRatesForYearArr[referenceMonth] ?? selectedUser.workPercentage;
+  const workRate = selectedMonthWorkPct / 100;
+  const annualAvgRateDecimal = averageAnnualWorkRatePercent(monthlyRatesForYearArr) / 100;
+
   const weeklyHours = FULL_TIME_WEEKLY_HOURS * workRate;
   const profile = selectedUser.planningRhProfile ?? DEFAULT_PLANNING_RH_PROFILE;
   const profileRules = planningRhRulesByProfile[profile];
-  const annualReferenceHoursRaw = isLeapYear(referenceYear)
-    ? profileRules.annualHoursLeapYear
-    : profileRules.annualHoursCommonYear;
-
   const monthlyTheoreticalHours =
     profileRules.dailyHours === null ? null : roundToTenth(profileRules.dailyHours * weekdayCountInMonth * workRate);
-  const annualTheoreticalHours =
-    annualReferenceHoursRaw === null ? null : roundToTenth(annualReferenceHoursRaw * workRate);
-  const annualRestDays = roundToHalfDay(profileRules.annualRestDays * workRate);
-  const annualPublicHolidays = roundToHalfDay(profileRules.annualPublicHolidays * workRate);
 
-  const monthlyRealHours = roundToTenth(
-    assignmentsForMonth.reduce((sum, a) => {
-      if ((LEAVE_CODES as readonly string[]).includes(a.shiftType.code)) return sum;
-      return sum + getShiftDurationHours(a.shiftType.startsAt, a.shiftType.endsAt);
-    }, 0),
-  );
-  const annualRealHours = roundToTenth(
-    assignmentsForYearLeaves.reduce((sum, a) => {
-      if ((LEAVE_CODES as readonly string[]).includes(a.shiftType.code)) return sum;
-      return sum + getShiftDurationHours(a.shiftType.startsAt, a.shiftType.endsAt);
-    }, 0),
-  );
+  let annualTheoreticalSum = 0;
+  if (profileRules.dailyHours !== null) {
+    for (let mi = 0; mi < 12; mi++) {
+      const wd = weekdayCountInUtcMonth(referenceYear, mi);
+      const rm = monthlyRatesForYearArr[mi] ?? selectedUser.workPercentage;
+      annualTheoreticalSum += profileRules.dailyHours * wd * (rm / 100);
+    }
+  }
+  const annualTheoreticalHours =
+    profileRules.dailyHours === null ? null : roundToTenth(annualTheoreticalSum);
+
+  const annualRestDays = roundToHalfDay(profileRules.annualRestDays * annualAvgRateDecimal);
+  const annualPublicHolidays = roundToHalfDay(profileRules.annualPublicHolidays * annualAvgRateDecimal);
+
+  const [monthlyRawHours, annualRawHours] = await Promise.all([
+    sumEffectiveWorkedHoursForTeamUserRange({
+      teamId: team.id,
+      userId: selectedUser.id,
+      rangeStart: monthStart,
+      rangeEnd: monthEnd,
+      excludeCodesFromWorkedHours: LEAVE_CODES,
+    }),
+    sumEffectiveWorkedHoursForTeamUserRange({
+      teamId: team.id,
+      userId: selectedUser.id,
+      rangeStart: yearStart,
+      rangeEnd: yearEnd,
+      excludeCodesFromWorkedHours: LEAVE_CODES,
+    }),
+  ]);
+  const monthlyRealHours = roundToTenth(monthlyRawHours);
+  const annualRealHours = roundToTenth(annualRawHours);
 
   // workRate already computed above
   const hoursRatio =
@@ -176,7 +203,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
   const annualHoursPercent = Math.round(clamp(annualHoursRatio, 0, 1) * 100);
 
   const leaveStats = LEAVE_CODES.map((code) => {
-    const yearlyQuota = roundToHalfDay((profileRules.annualLeaveQuota[code] ?? 0) * workRate);
+    const yearlyQuota = roundToHalfDay((profileRules.annualLeaveQuota[code] ?? 0) * annualAvgRateDecimal);
     const taken = assignmentsForYearLeaves.reduce(
       (count, a) => (a.shiftType.code === code ? count + 1 : count),
       0,
@@ -191,9 +218,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
     <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 md:p-10">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Droits et récapitulatif</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-600">
-          Récapitulatif individuel
-        </p>
+      
       </div>
 
       <form method="get" className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -252,7 +277,20 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
           <p className="mt-3 text-sm text-zinc-700">
             Rôle: {roleLabelsFr[selectedUser.role as UserRole] ?? selectedUser.role}
           </p>
-          <p className="text-sm text-zinc-700">Temps de travail : {selectedUser.workPercentage} %</p>
+          <p className="text-sm text-zinc-700">
+            Temps de travail (mois affiché) : {selectedMonthWorkPct} %
+          </p>
+          {workRateSegments.length > 0 ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Segments mois pleins actifs : les totaux annuels (objectifs, repos, quotas congés) sont pondérés mois par
+              mois sur {referenceYear} (moyenne ~ {Math.round(annualAvgRateDecimal * 100)} %).
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-500">
+              Défaut agent : {selectedUser.workPercentage} %. Ajoutez des segments sur la fiche agent pour des temps
+              partiels par période.
+            </p>
+          )}
           <p className="text-sm text-zinc-700">
             Compétences: {selectedUser.skills.length ? selectedUser.skills.map((s) => s.skill.name).join(", ") : "—"}
           </p>
@@ -269,7 +307,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
             </span>
           </p>
           <p className="text-sm text-zinc-700">
-            Réel (planning saisi): <span className="font-semibold text-zinc-900">{monthlyRealHours} h</span>
+            Réel : <span className="font-semibold text-zinc-900">{monthlyRealHours} h</span>
           </p>
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between text-xs text-zinc-600">
@@ -287,7 +325,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
           <p className="mt-1 text-xs text-zinc-500">
             {annualTheoreticalHours === null
               ? "Repère annuel: N/A (forfait jours, référence en jours)."
-              : `Repère annuel (proratisé): ${annualTheoreticalHours} h pour ${weeklyHours} h/semaine.`}
+              : `Repère annuel ${referenceYear} (somme des mois au bon %) : ${annualTheoreticalHours} h — équivalent ~ ${weeklyHours} h/semaine sur le mois affiché.`}
           </p>
           <div className="mt-4 border-t border-zinc-200 pt-3">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Heures (année en cours)</h3>
@@ -298,7 +336,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
               </span>
             </p>
             <p className="text-sm text-zinc-700">
-              Réel (planning saisi): <span className="font-semibold text-zinc-900">{annualRealHours} h</span>
+              Réel : <span className="font-semibold text-zinc-900">{annualRealHours} h</span>
             </p>
             {annualTheoreticalHours === null ? (
               <p className="mt-2 text-xs text-zinc-500">
@@ -322,7 +360,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
         </section>
 
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-zinc-900">Congés )</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">Congés</h2>
           <ul className="mt-2 space-y-3 text-sm text-zinc-700">
             {leaveStats.map((s) => (
               <li key={s.code}>
@@ -342,15 +380,7 @@ export default async function DroitsPage({ searchParams }: SearchProps) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-zinc-500">
-            Quotas de base 100% : CA {profileRules.annualLeaveQuota.CA}j, CF{" "}
-            {profileRules.annualLeaveQuota.CF}j, CH {profileRules.annualLeaveQuota.CH}j, RTT{" "}
-            {profileRules.annualLeaveQuota.RTT}j.
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Autres repères annuels proratisés: RH {annualRestDays} j, fériés {annualPublicHolidays} j.
-          </p>
-        </section>
+           </section>
       </div>
 
       <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

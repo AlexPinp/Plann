@@ -11,6 +11,7 @@ import { adminTeamPath } from "@/lib/routes";
 import { roleLabelsFr } from "@/lib/user-roles";
 import { normalizeTemplateCycleWeeks } from "@/lib/planning-template";
 import { createAgent } from "./actions";
+import { CreateAgentCollapsible } from "./CreateAgentCollapsible";
 
 function teamAxisShortLabel(team: { job: TeamJob; rhythm: TeamRhythm }): string {
   const job = team.job === TeamJob.IDE ? "IDE" : "AS";
@@ -137,9 +138,9 @@ export default async function AdminAgentsPage({ params, searchParams }: Props) {
   return (
     <main>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Agents & acces</h1>
+        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Agents</h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Gerez les agents et leurs competences. La desactivation se fait depuis la fiche agent (Modifier).
+          Gerez les agents et leurs competences.
         </p>
       </div>
 
@@ -169,7 +170,7 @@ export default async function AdminAgentsPage({ params, searchParams }: Props) {
               </th>
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">
                 <Link href={sortHref("bloc")} className="hover:text-zinc-900">
-                  {sortLabel("bloc", "Equipe A / B / C")}
+                  {sortLabel("bloc", "Bloc")}
                 </Link>
               </th>
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">
@@ -261,10 +262,9 @@ export default async function AdminAgentsPage({ params, searchParams }: Props) {
         </table>
       </section>
 
-      {/* ── Formulaire creation ── */}
-      <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Nouvel agent</h2>
-        <form action={createAgent} className="mt-4 grid gap-4 sm:grid-cols-2">
+      {/* ── Formulaire creation (replie par defaut) ── */}
+      <CreateAgentCollapsible>
+        <form action={createAgent} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="teamSlug" value={team.slug} />
           <div className="sm:col-span-2 rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
             <p className="text-xs font-medium text-zinc-700">Rattachement IDE/AS · jour/nuit</p>
@@ -337,11 +337,11 @@ export default async function AdminAgentsPage({ params, searchParams }: Props) {
             <input type="hidden" name="role" value={UserRole.AGENT} />
           )}
           <div>
-            <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabel">Bloc / equipe</label>
-            <input id="planningGroupLabel" name="planningGroupLabel" placeholder="Bloc jour" className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+            <label className="text-xs font-medium text-zinc-600" htmlFor="planningGroupLabel">Equipe</label>
+            <input id="planningGroupLabel" name="planningGroupLabel" placeholder="A / B / C / CDS / etc." className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumber">Numero de trame</label>
+            <label className="text-xs font-medium text-zinc-600" htmlFor="planningTemplateNumber">Numéro de trame</label>
             <select
               id="planningTemplateNumber"
               name="planningTemplateNumber"
@@ -399,7 +399,7 @@ export default async function AdminAgentsPage({ params, searchParams }: Props) {
             </button>
           </div>
         </form>
-      </section>
+      </CreateAgentCollapsible>
     </main>
   );
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { canEditPlanningAndStaff } from "@/lib/user-roles";
 import { getUserTeams, requireTeamMembership } from "@/lib/team";
-import { adminTeamPath } from "@/lib/routes";
+import { adminTeamPath, workspacePath } from "@/lib/routes";
 import { signOut } from "../../login/actions";
 
 type Props = {
@@ -23,31 +23,31 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
   }));
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/95 backdrop-blur print:hidden">
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4 md:px-6">
-          <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
-            <span className="text-sm font-bold text-zinc-900">Planner SAU</span>
-            <span className="truncate text-xs font-medium text-zinc-500" title={ctx.team.label}>
-              {ctx.team.label}
-            </span>
-          </div>
-
-          <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-3">
-            <span className="hidden text-xs text-zinc-500 sm:inline">
+    <div className="flex min-h-full flex-col bg-[var(--surface-soft)]">
+      <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/95 backdrop-blur print:hidden">
+        <div className="border-b border-[var(--border)]">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-2 sm:px-4 md:px-6">
+            <Link
+              href={workspacePath(teamSlug, "planning-moi")}
+              className="text-base font-semibold tracking-tight text-[var(--text)] hover:opacity-80"
+            >
+              Plann
+            </Link>
+            <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-3">
+            <span className="hidden text-xs text-[var(--text-muted)] sm:inline">
               {ctx.user.lastName.toUpperCase()} {ctx.user.firstName}
             </span>
             {canStaff && (
               <Link
                 href={adminTeamPath(teamSlug, "planning")}
-                className="rounded-md border border-zinc-900 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
+                className="rounded-md border border-[var(--text)] bg-[var(--text)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90"
               >
                 Administration
               </Link>
             )}
             <Link
               href={`/${teamSlug}/parametres`}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)]"
               aria-label="Ouvrir mes paramètres"
               title="Paramètres"
             >
@@ -71,11 +71,12 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
             <form action={signOut}>
               <button
                 type="submit"
-                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                className="rounded-md border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)]"
               >
                 Deconnexion
               </button>
             </form>
+            </div>
           </div>
         </div>
         <WorkspaceTabs teamSlug={teamSlug} switcherTeams={switcherTeams} />

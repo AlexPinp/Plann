@@ -4,8 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ShiftCategory } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
-import { requireStaffAdmin } from "@/lib/require-staff-admin";
-import { getAllTeams } from "@/lib/team";
+import {
+  PrismaClientKnownRequestError,
+} from "@prisma/client/runtime/client";
+import { getShiftMutationErrorMessage } from "@/lib/shift-mutation-errors";
+import { getAllTeams, getTeamBySlug, LEGACY_DEFAULT_TEAM_SLUG, requireTeamAdmin } from "@/lib/team";
 import { adminTeamPath, revalidateTeamPlanningSurfaces } from "@/lib/routes";
 
 function parseCategory(raw: FormDataEntryValue | null): ShiftCategory {
@@ -24,19 +27,20 @@ function parseColor(raw: FormDataEntryValue | null): string {
 
 function parseTime(raw: FormDataEntryValue | null, fallback = "08:00"): string {
   const value = String(raw ?? "").trim();
-  if (!/^\d{2}:\d{2}$/.test(value)) return fallback;
-  const [h, m] = value.split(":").map(Number);
+  const match = value.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!match) return fallback;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
   if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return fallback;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-function getTeamPath(teamSlug: string): string {
-  if (!teamSlug) return "/admin/codes-horaires";
-  return adminTeamPath(teamSlug, "codes-horaires");
+function codesPath(teamSlug: string): string {
+  const slug = teamSlug.trim() || LEGACY_DEFAULT_TEAM_SLUG;
+  return adminTeamPath(slug, "codes-horaires");
 }
 
 async function revalidateShiftPages() {
-  revalidatePath("/admin/codes-horaires");
   const teams = await getAllTeams();
   for (const t of teams) {
     revalidateTeamPlanningSurfaces(t.slug, revalidatePath);
@@ -45,10 +49,16 @@ async function revalidateShiftPages() {
 }
 
 export async function createShiftCode(formData: FormData) {
-  await requireStaffAdmin();
-
   const teamSlug = String(formData.get("teamSlug") ?? "").trim();
-  const basePath = getTeamPath(teamSlug);
+  await requireTeamAdmin(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+
+  const team = await getTeamBySlug(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+  const basePath = codesPath(team?.slug ?? teamSlug);
+
+  if (!team) {
+    redirect(basePath + "?error=" + encodeURIComponent("Équipe introuvable."));
+  }
+
   const code = String(formData.get("code") ?? "")
     .trim()
     .toUpperCase();
@@ -65,6 +75,7 @@ export async function createShiftCode(formData: FormData) {
   try {
     await prisma.shiftType.create({
       data: {
+        teamId: team.id,
         code,
         label,
         color,
@@ -73,8 +84,8 @@ export async function createShiftCode(formData: FormData) {
         endsAt,
       },
     });
-  } catch {
-    redirect(basePath + "?error=" + encodeURIComponent("Impossible de creer ce code (deja existant ou invalide)."));
+  } catch (error) {
+    redirect(basePath + "?error=" + encodeURIComponent(getShiftMutationErrorMessage(error)));
   }
 
   await revalidateShiftPages();
@@ -82,17 +93,23 @@ export async function createShiftCode(formData: FormData) {
 }
 
 export async function updateShiftCode(formData: FormData) {
-  await requireStaffAdmin();
-
   const teamSlug = String(formData.get("teamSlug") ?? "").trim();
-  const basePath = getTeamPath(teamSlug);
+  await requireTeamAdmin(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+
+  const team = await getTeamBySlug(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+  const basePath = codesPath(team?.slug ?? teamSlug);
+
+  if (!team) {
+    redirect(basePath + "?error=" + encodeURIComponent("Équipe introuvable."));
+  }
+
   const id = String(formData.get("id") ?? "").trim();
   if (!id) {
     redirect(basePath + "?error=" + encodeURIComponent("Code horaire introuvable."));
   }
 
   const existing = await prisma.shiftType.findUnique({ where: { id } });
-  if (!existing) {
+  if (!existing || existing.teamId !== team.id) {
     redirect(basePath + "?error=" + encodeURIComponent("Code horaire introuvable."));
   }
 
@@ -121,8 +138,8 @@ export async function updateShiftCode(formData: FormData) {
         endsAt,
       },
     });
-  } catch {
-    redirect(basePath + "?error=" + encodeURIComponent("Impossible de modifier ce code (doublon ou donnees invalides)."));
+  } catch (error) {
+    redirect(basePath + "?error=" + encodeURIComponent(getShiftMutationErrorMessage(error)));
   }
 
   await revalidateShiftPages();
@@ -130,12 +147,23 @@ export async function updateShiftCode(formData: FormData) {
 }
 
 export async function deleteShiftCode(formData: FormData) {
-  await requireStaffAdmin();
-
   const teamSlug = String(formData.get("teamSlug") ?? "").trim();
-  const basePath = getTeamPath(teamSlug);
+  await requireTeamAdmin(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+
+  const team = await getTeamBySlug(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+  const basePath = codesPath(team?.slug ?? teamSlug);
+
+  if (!team) {
+    redirect(basePath + "?error=" + encodeURIComponent("Équipe introuvable."));
+  }
+
   const id = String(formData.get("id") ?? "").trim();
   if (!id) return;
+
+  const existing = await prisma.shiftType.findUnique({ where: { id } });
+  if (!existing || existing.teamId !== team.id) {
+    redirect(basePath + "?error=" + encodeURIComponent("Code horaire introuvable."));
+  }
 
   const assignmentCount = await prisma.assignment.count({ where: { shiftTypeId: id } });
   if (assignmentCount > 0) {
@@ -146,7 +174,82 @@ export async function deleteShiftCode(formData: FormData) {
     );
   }
 
-  await prisma.shiftType.delete({ where: { id } });
+  const deleted = await prisma.shiftType.deleteMany({ where: { id, teamId: team.id } });
+  if (deleted.count === 0) {
+    redirect(basePath + "?error=" + encodeURIComponent("Code horaire introuvable."));
+  }
   await revalidateShiftPages();
   redirect(basePath + "?deleted=1");
+}
+
+/** Copie les codes manquants depuis une autre équipe (même libellé de code → ignoré sur la cible). */
+export async function copyShiftCodesFromTeam(formData: FormData) {
+  const teamSlug = String(formData.get("teamSlug") ?? "").trim();
+  await requireTeamAdmin(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+
+  const targetTeam = await getTeamBySlug(teamSlug || LEGACY_DEFAULT_TEAM_SLUG);
+  const basePath = codesPath(targetTeam?.slug ?? teamSlug);
+
+  if (!targetTeam) {
+    redirect(basePath + "?error=" + encodeURIComponent("Équipe introuvable."));
+  }
+
+  const sourceSlug = String(formData.get("sourceTeamSlug") ?? "").trim();
+  const sourceTeam = await getTeamBySlug(sourceSlug);
+  if (!sourceTeam) {
+    redirect(basePath + "?error=" + encodeURIComponent("Équipe source introuvable."));
+  }
+  if (sourceTeam.id === targetTeam.id) {
+    redirect(basePath + "?error=" + encodeURIComponent("Choisissez une autre équipe que la courante."));
+  }
+
+  const sourceShifts = await prisma.shiftType.findMany({
+    where: { teamId: sourceTeam.id },
+    include: { skills: true },
+    orderBy: { code: "asc" },
+  });
+
+  const existingCodes = new Set(
+    (
+      await prisma.shiftType.findMany({
+        where: { teamId: targetTeam.id },
+        select: { code: true },
+      })
+    ).map((s) => s.code),
+  );
+
+  let copied = 0;
+  for (const s of sourceShifts) {
+    if (existingCodes.has(s.code)) continue;
+    try {
+      const created = await prisma.shiftType.create({
+        data: {
+          teamId: targetTeam.id,
+          code: s.code,
+          label: s.label,
+          color: s.color,
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          category: s.category,
+        },
+      });
+      existingCodes.add(s.code);
+      copied += 1;
+      if (s.skills.length > 0) {
+        await prisma.shiftSkill.createMany({
+          data: s.skills.map((sk) => ({ shiftTypeId: created.id, skillId: sk.skillId })),
+          skipDuplicates: true,
+        });
+      }
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError && error.code === "P2002") {
+        existingCodes.add(s.code);
+        continue;
+      }
+      redirect(basePath + "?error=" + encodeURIComponent(getShiftMutationErrorMessage(error)));
+    }
+  }
+
+  await revalidateShiftPages();
+  redirect(`${basePath}?copied=${copied}`);
 }

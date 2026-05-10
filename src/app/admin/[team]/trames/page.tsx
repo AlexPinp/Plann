@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DEFAULT_TEMPLATE_CYCLE_WEEKS, normalizeTemplateCycleWeeks } from "@/lib/planning-template";
+import {
+  cycleStartDateToInputValue,
+  DEFAULT_TEMPLATE_CYCLE_WEEKS,
+  normalizeTemplateCycleWeeks,
+} from "@/lib/planning-template";
 import { prisma } from "@/lib/prisma";
 import { getTeamBySlug } from "@/lib/team";
 import { adminTeamPath } from "@/lib/routes";
@@ -30,7 +34,11 @@ export default async function AdminTemplatesPage({ params, searchParams }: Props
   const tramesPath = adminTeamPath(team.slug, "trames");
 
   const [shifts, template, existingTemplates] = await Promise.all([
-    prisma.shiftType.findMany({ orderBy: { code: "asc" } }),
+    prisma.shiftType.findMany({
+      where: { teamId: team.id },
+      select: { id: true, code: true },
+      orderBy: { code: "asc" },
+    }),
     prisma.planningTemplate.findUnique({
       where: { teamId_number: { teamId: team.id, number: selectedNumber } },
       include: { entries: true },
@@ -151,7 +159,7 @@ export default async function AdminTemplatesPage({ params, searchParams }: Props
           </button>
         </div>
 
-        <div className="mb-4 grid gap-4 sm:grid-cols-2">
+        <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label htmlFor="templateLabel" className="text-xs font-medium text-zinc-600">
               Libelle
@@ -178,6 +186,22 @@ export default async function AdminTemplatesPage({ params, searchParams }: Props
               className="mt-1 w-full max-w-[8rem] rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             />
             <p className="mt-1 text-[11px] text-zinc-500">La grille comporte ce nombre de semaines × 7 jours.</p>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-1">
+            <label htmlFor="cycleStartDate" className="text-xs font-medium text-zinc-600">
+              Date de debut du cycle
+            </label>
+            <input
+              id="cycleStartDate"
+              name="cycleStartDate"
+              type="date"
+              defaultValue={cycleStartDateToInputValue(template?.cycleStartDate ?? null)}
+              className="mt-1 w-full max-w-[11rem] rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-[11px] text-zinc-500">
+              La premiere case de la grille (jour 0) coincide avec cette date. Laisser vide pour l&apos;ancrage par
+              defaut (2 mars 2026).
+            </p>
           </div>
         </div>
 

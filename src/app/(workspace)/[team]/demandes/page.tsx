@@ -41,7 +41,7 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
   if (!me) {
     return (
       <main className="mx-auto w-full max-w-4xl flex-1 p-4 sm:p-6 md:p-10">
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-soft)] p-4 text-sm text-[var(--warning)]">
           Profil agent introuvable pour cette session. Reconnectez-vous ou contactez votre cadre.
         </p>
       </main>
@@ -58,10 +58,10 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
     return (
       <main className="mx-auto w-full max-w-4xl flex-1 p-4 sm:p-6 md:p-10">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Demandes</h1>
-          <p className="mt-1 text-sm text-zinc-600">Module indisponible temporairement.</p>
+          <h1 className="text-xl font-semibold text-[var(--text)] sm:text-2xl">Demandes</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Module indisponible temporairement.</p>
         </div>
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-soft)] p-4 text-sm text-[var(--warning)]">
           Les demandes ne sont pas encore disponibles dans le client Prisma actif. Relancez le serveur de
           développement pour recharger le client.
         </p>
@@ -78,28 +78,28 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 md:p-10">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Demandes</h1>
+        <h1 className="text-xl font-semibold text-[var(--text)] sm:text-2xl">Demandes</h1>
         
       </div>
 
-      {created ? <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Demande créée.</p> : null}
-      {updated ? <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Demande modifiée.</p> : null}
-      {cancelled ? <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Demande annulée.</p> : null}
-      {error ? <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p> : null}
+      {created ? <p className="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm text-[var(--success)]">Demande créée.</p> : null}
+      {updated ? <p className="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm text-[var(--success)]">Demande modifiée.</p> : null}
+      {cancelled ? <p className="mb-4 rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-sm text-[var(--warning)]">Demande annulée.</p> : null}
+      {error ? <p className="mb-4 rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p> : null}
 
-      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-zinc-900">Nouvelle demande</h2>
+      <section className="mb-6 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-[var(--text)]">Nouvelle demande</h2>
         <form action={createLeaveRequest} className="mt-3 grid gap-3 md:grid-cols-2">
           <input type="hidden" name="teamSlug" value={teamSlug} />
           <div className="md:col-span-2">
-            <label htmlFor="type" className="mb-1 block text-xs font-medium text-zinc-700">
+            <label htmlFor="type" className="mb-1 block text-xs font-medium text-[#333333]">
               Type
             </label>
             <select
               id="type"
               name="type"
               defaultValue="CA"
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+              className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
             >
               {LEAVE_REQUEST_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -110,7 +110,7 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
           </div>
           <div className="grid grid-cols-2 gap-3 md:col-span-2">
             <div>
-              <label htmlFor="startsAt" className="mb-1 block text-xs font-medium text-zinc-700">
+              <label htmlFor="startsAt" className="mb-1 block text-xs font-medium text-[#333333]">
                 Début
               </label>
               <input
@@ -118,11 +118,11 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                 name="startsAt"
                 type="date"
                 required
-                className="w-full min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+                className="w-full min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
               />
             </div>
             <div>
-              <label htmlFor="endsAt" className="mb-1 block text-xs font-medium text-zinc-700">
+              <label htmlFor="endsAt" className="mb-1 block text-xs font-medium text-[#333333]">
                 Fin
               </label>
               <input
@@ -130,26 +130,26 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                 name="endsAt"
                 type="date"
                 required
-                className="w-full min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+                className="w-full min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
               />
             </div>
           </div>
           <div className="md:col-span-2">
-            <label htmlFor="note" className="mb-1 block text-xs font-medium text-zinc-700">
+            <label htmlFor="note" className="mb-1 block text-xs font-medium text-[#333333]">
               Motif / note (optionnel)
             </label>
             <input
               id="note"
               name="note"
               type="text"
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+              className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
               placeholder="Ex: congés d'été, RDV médical, etc."
             />
           </div>
           <div className="md:col-span-2">
             <button
               type="submit"
-              className="w-full rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 sm:w-auto"
+              className="w-full rounded-lg border border-[var(--primary)] bg-[var(--primary)] px-3 py-2.5 text-sm font-medium text-white hover:bg-[var(--primary-hover)] sm:w-auto"
             >
               Envoyer la demande
             </button>
@@ -157,44 +157,57 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
         </form>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-zinc-900">Mes demandes</h2>
+      <section className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-[var(--text)]">Mes demandes</h2>
         {requests.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500">Aucune demande pour le moment.</p>
+          <p className="mt-3 text-sm text-[var(--text-muted)]">Aucune demande pour le moment.</p>
         ) : (
-          <div className="mt-3 space-y-3">
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-[var(--border)] text-sm">
+              <thead>
+                <tr className="bg-[var(--surface-soft)] text-left text-xs uppercase tracking-wide text-[var(--text-muted)]">
+                  <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">Type</th>
+                  <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">Période</th>
+                  <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">Statut</th>
+                  <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">Détails</th>
+                  <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
             {requests.map((request) => {
               const isPending = request.status === "PENDING";
               return (
-                <article key={request.id} className="rounded-lg border border-zinc-200 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-zinc-900">
-                      {leaveTypeLabels[request.type]} - du {format(request.startsAt, "dd/MM/yyyy", { locale: fr })} au{" "}
-                      {format(request.endsAt, "dd/MM/yyyy", { locale: fr })}
-                    </p>
+                <tr key={request.id} className="align-top even:bg-[#fcfcfc]">
+                  <td className="border-b border-[var(--border)] px-3 py-3 font-semibold text-[var(--text)]">{leaveTypeLabels[request.type]}</td>
+                  <td className="border-b border-[var(--border)] px-3 py-3 text-[var(--text)]">
+                    <span className="font-hours text-xs">{format(request.startsAt, "dd/MM/yyyy", { locale: fr })}</span> au{" "}
+                    <span className="font-hours text-xs">{format(request.endsAt, "dd/MM/yyyy", { locale: fr })}</span>
+                  </td>
+                  <td className="border-b border-[var(--border)] px-3 py-3">
                     <span
                       className={[
-                        "rounded px-2 py-0.5 text-xs font-medium",
+                        "rounded-full px-2.5 py-1 text-xs font-medium",
                         request.status === "PENDING"
-                          ? "bg-amber-100 text-amber-900"
+                          ? "bg-[var(--warning-soft)] text-[var(--warning)]"
                           : request.status === "APPROVED"
-                            ? "bg-emerald-100 text-emerald-800"
+                            ? "bg-[var(--success-soft)] text-[var(--success)]"
                             : request.status === "REFUSED"
-                              ? "bg-rose-100 text-rose-800"
-                              : "bg-zinc-100 text-zinc-700",
+                              ? "bg-[var(--danger-soft)] text-[var(--danger)]"
+                              : "bg-[#f1f1f1] text-[var(--text-muted)]",
                       ].join(" ")}
                     >
                       {leaveStatusLabels[request.status]}
                     </span>
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Demandée le {format(request.createdAt, "dd/MM/yyyy à HH:mm", { locale: fr })}
-                  </p>
-                  {request.note ? <p className="mt-1 text-sm text-zinc-700">Note: {request.note}</p> : null}
-                  {request.decidedAt ? (
-                    <div className="mt-2 rounded-md bg-zinc-50 p-2 text-xs text-zinc-600">
+                  </td>
+                  <td className="border-b border-[var(--border)] px-3 py-3">
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Demandée le <span className="font-hours">{format(request.createdAt, "dd/MM/yyyy à HH:mm", { locale: fr })}</span>
+                    </p>
+                    {request.note ? <p className="mt-1 text-sm text-[#333333]">Note: {request.note}</p> : null}
+                    {request.decidedAt ? (
+                    <div className="mt-2 rounded-md bg-[var(--surface-soft)] p-2 text-xs text-[var(--text-muted)]">
                       <p>
-                        Décision le {format(request.decidedAt, "dd/MM/yyyy à HH:mm", { locale: fr })} par{" "}
+                        Decision le <span className="font-hours">{format(request.decidedAt, "dd/MM/yyyy à HH:mm", { locale: fr })}</span> par{" "}
                         {request.decidedByName ??
                           (request.decidedBy
                             ? `${request.decidedBy.lastName.toUpperCase()} ${request.decidedBy.firstName}`
@@ -203,17 +216,18 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                       {request.decisionNote ? <p className="mt-1">Commentaire: {request.decisionNote}</p> : null}
                     </div>
                   ) : null}
-
-                  {isPending ? (
-                    <div className="mt-3 space-y-2 border-t border-zinc-200 pt-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Modifier la demande</p>
-                      <form action={updateLeaveRequest} className="grid gap-2 md:grid-cols-2">
+                  </td>
+                  <td className="border-b border-[var(--border)] px-3 py-3">
+                    {isPending ? (
+                      <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Modifier</p>
+                      <form action={updateLeaveRequest} className="grid gap-2">
                         <input type="hidden" name="teamSlug" value={teamSlug} />
                         <input type="hidden" name="id" value={request.id} />
                         <select
                           name="type"
                           defaultValue={request.type}
-                          className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 md:col-span-2"
+                          className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
                         >
                           {LEAVE_REQUEST_TYPES.map((type) => (
                             <option key={type} value={type}>
@@ -221,19 +235,19 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                             </option>
                           ))}
                         </select>
-                        <div className="grid grid-cols-2 gap-2 md:col-span-2">
+                        <div className="grid grid-cols-2 gap-2">
                           <input
                             type="date"
                             name="startsAt"
                             defaultValue={format(request.startsAt, "yyyy-MM-dd")}
-                            className="min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+                            className="min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
                             required
                           />
                           <input
                             type="date"
                             name="endsAt"
                             defaultValue={format(request.endsAt, "yyyy-MM-dd")}
-                            className="min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+                            className="min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
                             required
                           />
                         </div>
@@ -242,12 +256,12 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                           name="note"
                           defaultValue={request.note ?? ""}
                           placeholder="Note (optionnel)"
-                          className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 md:col-span-2"
+                          className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
                         />
-                        <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="submit"
-                            className="w-full rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 sm:w-auto"
+                            className="w-full rounded-lg border border-[var(--primary)] bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--primary-hover)] sm:w-auto"
                           >
                             Enregistrer
                           </button>
@@ -258,16 +272,19 @@ export default async function DemandesPage({ searchParams, params }: SearchProps
                         <input type="hidden" name="id" value={request.id} />
                         <button
                           type="submit"
-                          className="w-full rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 sm:w-auto"
+                          className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)] sm:w-auto"
                         >
                           Annuler la demande
                         </button>
                       </form>
                     </div>
                   ) : null}
-                </article>
+                  </td>
+                </tr>
               );
             })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

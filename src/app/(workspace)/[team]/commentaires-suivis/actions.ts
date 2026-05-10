@@ -89,6 +89,11 @@ export async function updateCommentaryEntry(formData: FormData) {
     redirect(pageUrl + "?error=" + encodeURIComponent("Données commentaire invalides."));
   }
 
+  const existing = await prisma.commentaryEntry.findUnique({ where: { id }, select: { createdById: true } });
+  if (!existing || existing.createdById !== me.id) {
+    redirect(pageUrl + "?error=" + encodeURIComponent("Modification non autorisée."));
+  }
+
   await prisma.commentaryEntry.update({
     where: { id },
     data: {
@@ -143,6 +148,11 @@ export async function updateFollowUpEntry(formData: FormData) {
   const subject = String(formData.get("subject") ?? "").trim();
   if (!id || !subject) {
     redirect(pageUrl + "?error=" + encodeURIComponent("Données suivi invalides."));
+  }
+
+  const existing = await prisma.followUpEntry.findUnique({ where: { id }, select: { createdById: true } });
+  if (!existing || existing.createdById !== me.id) {
+    redirect(pageUrl + "?error=" + encodeURIComponent("Modification non autorisée."));
   }
 
   await prisma.followUpEntry.update({

@@ -47,35 +47,85 @@ export async function ensureBaselineData() {
     skipDuplicates: true,
   });
 
-  /* Injection des codes uniquement sur base vide, pour ne pas recréer un code supprimé volontairement. */
+  async function duplicateShiftTypesFromTeam(sourceTeamId: string, targetTeamId: string) {
+    const source = await prisma.shiftType.findMany({
+      where: { teamId: sourceTeamId },
+      include: { skills: true },
+      orderBy: { code: "asc" },
+    });
+    for (const s of source) {
+      const exists = await prisma.shiftType.findUnique({
+        where: { teamId_code: { teamId: targetTeamId, code: s.code } },
+      });
+      if (exists) continue;
+      const dup = await prisma.shiftType.create({
+        data: {
+          teamId: targetTeamId,
+          code: s.code,
+          label: s.label,
+          color: s.color,
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          category: s.category,
+        },
+      });
+      if (s.skills.length > 0) {
+        await prisma.shiftSkill.createMany({
+          data: s.skills.map((sk) => ({ shiftTypeId: dup.id, skillId: sk.skillId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
+
+  /* Injection des codes par équipe : jeu de base sur l'équipe par défaut, puis copie pour les autres équipes sans codes. */
   if (shiftCount === 0) {
+    const baselineRows = [
+      { code: "J10", label: "JOUR 10H", color: "#dbeafe", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "J12", label: "JOUR 12H", color: "#fef3c7", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "N", label: "Nuit", color: "#e0e7ff", startsAt: "19:00", endsAt: "07:00", category: ShiftCategory.NUIT },
+      { code: "RTT", label: "RTT", color: "#e5e7eb", startsAt: "09:00", endsAt: "17:00", category: ShiftCategory.JOUR },
+      { code: "RCJ", label: "RCJ", color: "#e5e7eb", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "JCD", label: "JCD", color: "#bae6fd", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "JO1", label: "JO1", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JO2", label: "JO2", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JM1", label: "JM1", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JM2", label: "JM2", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JM3", label: "JM3", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JM4", label: "JM4", color: "#bae6fd", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "JH1", label: "JH1", color: "#ccfbf1", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JH2", label: "JH2", color: "#ccfbf1", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "JG1", label: "JG1", color: "#bbf7d0", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "JG2", label: "JG2", color: "#bbf7d0", startsAt: "09:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "CA", label: "CA", color: "#fef08a", startsAt: "00:00", endsAt: "23:59", category: ShiftCategory.JOUR },
+      { code: "CP", label: "CP", color: "#fef08a", startsAt: "00:00", endsAt: "23:59", category: ShiftCategory.JOUR },
+      { code: "NA", label: "NA", color: "#fecaca", startsAt: "19:00", endsAt: "07:00", category: ShiftCategory.NUIT },
+      { code: "RPJ", label: "RPJ", color: "#fed7aa", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
+      { code: "SSU", label: "SSU", color: "#ddd6fe", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
+      { code: "JF", label: "JF", color: "#e5e7eb", startsAt: "09:00", endsAt: "17:00", category: ShiftCategory.JOUR },
+    ] as const;
     await prisma.shiftType.createMany({
-      data: [
-        { code: "J10", label: "JOUR 10H", color: "#dbeafe", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "J12", label: "JOUR 12H", color: "#fef3c7", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "N", label: "Nuit", color: "#e0e7ff", startsAt: "19:00", endsAt: "07:00", category: ShiftCategory.NUIT },
-        { code: "RTT", label: "RTT", color: "#e5e7eb", startsAt: "09:00", endsAt: "17:00", category: ShiftCategory.JOUR },
-        { code: "RCJ", label: "RCJ", color: "#e5e7eb", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "JCD", label: "JCD", color: "#bae6fd", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "JO1", label: "JO1", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JO2", label: "JO2", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JM1", label: "JM1", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JM2", label: "JM2", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JM3", label: "JM3", color: "#bae6fd", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JM4", label: "JM4", color: "#bae6fd", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "JH1", label: "JH1", color: "#ccfbf1", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JH2", label: "JH2", color: "#ccfbf1", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "JG1", label: "JG1", color: "#bbf7d0", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "JG2", label: "JG2", color: "#bbf7d0", startsAt: "09:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "CA", label: "CA", color: "#fef08a", startsAt: "00:00", endsAt: "23:59", category: ShiftCategory.JOUR },
-        { code: "CP", label: "CP", color: "#fef08a", startsAt: "00:00", endsAt: "23:59", category: ShiftCategory.JOUR },
-        { code: "NA", label: "NA", color: "#fecaca", startsAt: "19:00", endsAt: "07:00", category: ShiftCategory.NUIT },
-        { code: "RPJ", label: "RPJ", color: "#fed7aa", startsAt: "08:30", endsAt: "18:30", category: ShiftCategory.JOUR },
-        { code: "SSU", label: "SSU", color: "#ddd6fe", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
-        { code: "JF", label: "JF", color: "#e5e7eb", startsAt: "09:00", endsAt: "17:00", category: ShiftCategory.JOUR },
-      ],
+      data: baselineRows.map((row) => ({ ...row, teamId: defaultTeam.id })),
       skipDuplicates: true,
     });
+
+    const allTeams = await prisma.team.findMany({ select: { id: true } });
+    for (const t of allTeams) {
+      if (t.id === defaultTeam.id) continue;
+      const n = await prisma.shiftType.count({ where: { teamId: t.id } });
+      if (n === 0) {
+        await duplicateShiftTypesFromTeam(defaultTeam.id, t.id);
+      }
+    }
+  } else {
+    /* Après migration ou équipe ajoutée plus tard : garantir au moins une copie des codes depuis l'équipe de référence. */
+    const allTeams = await prisma.team.findMany({ select: { id: true } });
+    for (const t of allTeams) {
+      const n = await prisma.shiftType.count({ where: { teamId: t.id } });
+      if (n === 0 && t.id !== defaultTeam.id) {
+        await duplicateShiftTypesFromTeam(defaultTeam.id, t.id);
+      }
+    }
   }
 
   if (userCount === 0) {
