@@ -43,10 +43,6 @@ function shiftWeekUtc(monday: Date, deltaWeeks: number): Date {
   return startOfIsoWeekMondayUtc(d);
 }
 
-function jobShort(j: TeamJob): string {
-  return j === TeamJob.IDE ? "IDE" : "AS";
-}
-
 type TemplateRow = {
   id: string;
   sector: "CMC" | "IOA" | "CC" | "SAUV" | "UDOM";
@@ -166,7 +162,10 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
         });
 
   const namesByRowDay = new Map<string, string[]>();
-  const dynamicRowsByKey = new Map<string, { job: TeamJob; rhythm: TeamRhythm; code: string }>();
+  /** Lignes « hors grille » : clé stable `${teamId}|${shiftCode}` (plusieurs équipes peuvent partager un même code). */
+  const namesByDynamicRowDay = new Map<string, string[]>();
+  const dynamicRowOrder: string[] = [];
+  const dynamicRowsMeta = new Map<string, { teamLabel: string; shiftCode: string; job: TeamJob; rhythm: TeamRhythm }>();
 
   for (const a of assignments) {
     const teamId = teamIdByWeekId.get(a.planningWeekId);
@@ -176,7 +175,6 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
 
     const shiftCode = normalizeShiftCode(a.shiftType.code.trim() || a.shiftType.label);
     const dk = formatUtcYmd(a.date);
-    const inferredSector = inferSectorFromShiftCode(shiftCode);
     const templateMatch = TEMPLATE_ROWS.find(
       (row) => row.job === team.job && row.rhythm === team.rhythm && row.acceptedCodes.includes(shiftCode),
     );
@@ -190,10 +188,21 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
       continue;
     }
 
-    const fallbackKey = `${jobShort(team.job)} ${shiftCode}`;
-    if (!dynamicRowsByKey.has(fallbackKey)) {
-      dynamicRowsByKey.set(fallbackKey, { job: team.job, rhythm: team.rhythm, code: shiftCode });
+    const rowKey = `${teamId}|${shiftCode}`;
+    if (!dynamicRowsMeta.has(rowKey)) {
+      dynamicRowsMeta.set(rowKey, {
+        teamLabel: team.label,
+        shiftCode,
+        job: team.job,
+        rhythm: team.rhythm,
+      });
+      dynamicRowOrder.push(rowKey);
     }
+    const dynCellKey = `${rowKey}|${dk}`;
+    const dlist = namesByDynamicRowDay.get(dynCellKey) ?? [];
+    const dname = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
+    if (!dlist.includes(dname)) dlist.push(dname);
+    namesByDynamicRowDay.set(dynCellKey, dlist);
   }
 
   const rows = TEMPLATE_ROWS;
@@ -265,6 +274,13 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">
           Au moins une équipe est encore en brouillon pour cette semaine — les noms affichés sont ceux du planning tel
           qu’enregistré. Validez chaque équipe en administration pour une vue officielle.
+        </p>
+      ) : null}
+
+      {weekIds.length === 0 ? (
+        <p className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-700 print:hidden">
+          Aucune semaine de planning en base pour cette semaine (toutes équipes). Les noms apparaissent une fois les
+          semaines créées dans le planning admin et des affectations enregistrées.
         </p>
       ) : null}
 
@@ -342,16 +358,42 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
                 </tr>
               );
             })}
-            {dynamicRowsByKey.size > 0 ? (
-              <tr>
-                <td colSpan={10} className="border border-zinc-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
-                  Codes détectés hors trame fixe :{" "}
-                  {Array.from(dynamicRowsByKey.keys())
-                    .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }))
-                    .join(", ")}
-                </td>
-              </tr>
-            ) : null}
+            {dynamicRowOrder.map((rowKey) => {
+              const meta = dynamicRowsMeta.get(rowKey);
+              if (!meta) return null;
+              const sectorGuess = inferSectorFromShiftCode(meta.shiftCode);
+              return (
+                <tr key={`dyn-${rowKey}`} className="bg-amber-50/40 hover:bg-amber-50/80">
+                  <td className="sticky left-0 z-20 border border-zinc-300 bg-amber-100/80 px-1 py-1 text-center text-[10px] font-bold text-amber-950">
+                    {sectorGuess ?? "—"}
+                  </td>
+                  <td className="sticky left-[56px] z-20 border border-zinc-300 bg-amber-50 px-1 py-1 text-center text-[10px] font-semibold uppercase text-amber-900">
+                    {meta.rhythm}
+                  </td>
+                  <td className="sticky left-[108px] z-20 border border-zinc-300 bg-white px-1 py-1 align-middle text-[10px] font-semibold leading-tight text-amber-950">
+                    <span className="block text-zinc-600">{meta.teamLabel}</span>
+                    <span className="text-[11px] text-zinc-900">{meta.shiftCode}</span>
+                    <span className="mt-0.5 block text-[9px] font-normal text-amber-800">hors grille fixe</span>
+                  </td>
+                  {weekDays.map((day) => {
+                    const names = (namesByDynamicRowDay.get(`${rowKey}|${day.ymd}`) ?? [])
+                      .slice()
+                      .sort((a, b) => a.localeCompare(b, "fr"));
+                    return (
+                      <td
+                        key={`dyn-${rowKey}-${day.ymd}`}
+                        className={[
+                          "border border-zinc-300 px-1.5 py-1 align-middle text-center text-[11px] font-semibold leading-snug text-zinc-900",
+                          day.isWeekend ? "bg-zinc-50/90" : "",
+                        ].join(" ")}
+                      >
+                        {names.length === 0 ? <span className="text-[10px] text-zinc-400"> </span> : names.join(", ")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
           </table>
         </div>
