@@ -104,15 +104,6 @@ function normalizeShiftCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function inferSectorFromShiftCode(code: string): TemplateRow["sector"] | null {
-  const c = normalizeShiftCode(code);
-  if (/^(JM|NM|JC)/.test(c)) return "CMC";
-  if (/^(JG|NG)/.test(c)) return "CC";
-  if (/^(JS|NS)/.test(c)) return "SAUV";
-  if (/^(JH|NH)/.test(c)) return "UDOM";
-  return null;
-}
-
 export default async function OrganisationWeekPage({ params, searchParams }: Props) {
   const { team: teamSlug } = await params;
   const teamCtx = await getTeamBySlug(teamSlug);
@@ -254,10 +245,6 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
   const shiftById = new Map(allShifts.map((s) => [s.id, s]));
 
   const namesByRowDay = new Map<string, string[]>();
-  /** Lignes « hors grille » : clé stable `${teamId}|${shiftCode}` (plusieurs équipes peuvent partager un même code). */
-  const namesByDynamicRowDay = new Map<string, string[]>();
-  const dynamicRowOrder: string[] = [];
-  const dynamicRowsMeta = new Map<string, { teamLabel: string; shiftCode: string; job: TeamJob; rhythm: TeamRhythm }>();
 
   function pushName(
     team: (typeof teams)[number],
@@ -269,29 +256,12 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     const templateMatch = TEMPLATE_ROWS.find(
       (row) => row.job === team.job && row.rhythm === team.rhythm && row.acceptedCodes.includes(shiftCode),
     );
+    if (!templateMatch) return;
 
-    if (templateMatch) {
-      const cellKey = `${templateMatch.id}|${dk}`;
-      const list = namesByRowDay.get(cellKey) ?? [];
-      if (!list.includes(displayName)) list.push(displayName);
-      namesByRowDay.set(cellKey, list);
-      return;
-    }
-
-    const rowKey = `${team.id}|${shiftCode}`;
-    if (!dynamicRowsMeta.has(rowKey)) {
-      dynamicRowsMeta.set(rowKey, {
-        teamLabel: team.label,
-        shiftCode,
-        job: team.job,
-        rhythm: team.rhythm,
-      });
-      dynamicRowOrder.push(rowKey);
-    }
-    const dynCellKey = `${rowKey}|${dk}`;
-    const dlist = namesByDynamicRowDay.get(dynCellKey) ?? [];
-    if (!dlist.includes(displayName)) dlist.push(displayName);
-    namesByDynamicRowDay.set(dynCellKey, dlist);
+    const cellKey = `${templateMatch.id}|${dk}`;
+    const list = namesByRowDay.get(cellKey) ?? [];
+    if (!list.includes(displayName)) list.push(displayName);
+    namesByRowDay.set(cellKey, list);
   }
 
   function resolveTemplateShift(
@@ -520,42 +490,6 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
                     return (
                       <td
                         key={`${row.id}-${day.ymd}`}
-                        className={[
-                          "border border-zinc-300 px-1.5 py-1 align-middle text-center text-[11px] font-semibold leading-snug text-zinc-900",
-                          day.isWeekend ? "bg-zinc-50/90" : "",
-                        ].join(" ")}
-                      >
-                        {names.length === 0 ? <span className="text-[10px] text-zinc-400"> </span> : names.join(", ")}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-            {dynamicRowOrder.map((rowKey) => {
-              const meta = dynamicRowsMeta.get(rowKey);
-              if (!meta) return null;
-              const sectorGuess = inferSectorFromShiftCode(meta.shiftCode);
-              return (
-                <tr key={`dyn-${rowKey}`} className="bg-amber-50/40 hover:bg-amber-50/80">
-                  <td className="sticky left-0 z-20 border border-zinc-300 bg-amber-100/80 px-1 py-1 text-center text-[10px] font-bold text-amber-950">
-                    {sectorGuess ?? "—"}
-                  </td>
-                  <td className="sticky left-[56px] z-20 border border-zinc-300 bg-amber-50 px-1 py-1 text-center text-[10px] font-semibold uppercase text-amber-900">
-                    {meta.rhythm}
-                  </td>
-                  <td className="sticky left-[108px] z-20 border border-zinc-300 bg-white px-1 py-1 align-middle text-[10px] font-semibold leading-tight text-amber-950">
-                    <span className="block text-zinc-600">{meta.teamLabel}</span>
-                    <span className="text-[11px] text-zinc-900">{meta.shiftCode}</span>
-                    <span className="mt-0.5 block text-[9px] font-normal text-amber-800">hors grille fixe</span>
-                  </td>
-                  {weekDays.map((day) => {
-                    const names = (namesByDynamicRowDay.get(`${rowKey}|${day.ymd}`) ?? [])
-                      .slice()
-                      .sort((a, b) => a.localeCompare(b, "fr"));
-                    return (
-                      <td
-                        key={`dyn-${rowKey}-${day.ymd}`}
                         className={[
                           "border border-zinc-300 px-1.5 py-1 align-middle text-center text-[11px] font-semibold leading-snug text-zinc-900",
                           day.isWeekend ? "bg-zinc-50/90" : "",
