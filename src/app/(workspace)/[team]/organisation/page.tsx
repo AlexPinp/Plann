@@ -7,6 +7,16 @@ import { prisma } from "@/lib/prisma";
 import { getAllTeams, getTeamBySlug, requireTeamMembership } from "@/lib/team";
 import { workspacePath } from "@/lib/routes";
 import { PlanningStatus, TeamJob, TeamRhythm } from "@/generated/prisma/enums";
+import {
+  DEFAULT_TEMPLATE_CYCLE_WEEKS,
+  getTemplateDayOffsetForCycle,
+  normalizeTemplateCycleWeeks,
+} from "@/lib/planning-template";
+import {
+  alternanceTimingFromUser,
+  getEffectivePlanningConfigForUserTeam,
+  planningConfigFromUserOrTeam,
+} from "@/lib/planning-alternance";
 import { ExportPdfButton } from "./ExportPdfButton";
 
 type Props = {
@@ -147,6 +157,7 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
   const provisionalFromDraft = planningWeeks.some((w) => w.status === PlanningStatus.DRAFT);
 
   const teamIdByWeekId = new Map(planningWeeks.map((w) => [w.id, w.teamId]));
+  const weekValidatedByTeamId = new Map(planningWeeks.map((w) => [w.teamId, w.status === PlanningStatus.VALIDATED]));
   const weekIds = planningWeeks.map((w) => w.id);
 
   const assignments =
@@ -161,20 +172,100 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
           include: { user: true, shiftType: true },
         });
 
+  const cellByTeamUserDay = new Map<string, (typeof assignments)[number]>();
+  for (const a of assignments) {
+    const tid = teamIdByWeekId.get(a.planningWeekId);
+    if (!tid || !a.userId) continue;
+    cellByTeamUserDay.set(`${tid}|${a.userId}|${formatUtcYmd(a.date)}`, a);
+  }
+
+  const teamIdsWithWeek = [...new Set(planningWeeks.map((w) => w.teamId))];
+
+  const membersWithTeams =
+    teamIdsWithWeek.length === 0
+      ? []
+      : await prisma.userTeam.findMany({
+          where: {
+            teamId: { in: teamIdsWithWeek },
+            user: { active: true },
+            showInTeamPlanning: true,
+          },
+          include: { user: true },
+        });
+
+  type MemberRow = (typeof membersWithTeams)[number];
+
+  function collectTemplateNumbersForUserTeam(user: MemberRow["user"], ut: MemberRow | null): number[] {
+    const cfg = planningConfigFromUserOrTeam(user, ut);
+    return [cfg.planningTemplateNumber, cfg.planningTemplateNumberA, cfg.planningTemplateNumberB].filter(
+      (n): n is number => typeof n === "number",
+    );
+  }
+
+  const memberKeySet = new Set(membersWithTeams.map((m) => `${m.teamId}|${m.userId}`));
+  const templatePairKeys = new Set<string>();
+  const templatePairs: { teamId: string; number: number }[] = [];
+  function addTemplatePairs(teamId: string, nums: number[]) {
+    for (const n of nums) {
+      const key = `${teamId}|${n}`;
+      if (templatePairKeys.has(key)) continue;
+      templatePairKeys.add(key);
+      templatePairs.push({ teamId, number: n });
+    }
+  }
+  for (const m of membersWithTeams) {
+    addTemplatePairs(m.teamId, collectTemplateNumbersForUserTeam(m.user, m));
+  }
+  for (const a of assignments) {
+    const tid = teamIdByWeekId.get(a.planningWeekId);
+    if (!tid || !a.userId || !a.user) continue;
+    if (memberKeySet.has(`${tid}|${a.userId}`)) continue;
+    addTemplatePairs(tid, collectTemplateNumbersForUserTeam(a.user, null));
+  }
+
+  const [templates, allShifts] = await Promise.all([
+    templatePairs.length
+      ? prisma.planningTemplate.findMany({
+          where: { OR: templatePairs },
+          include: { entries: { where: { shiftTypeId: { not: null } } } },
+        })
+      : Promise.resolve([]),
+    teamIdsWithWeek.length
+      ? prisma.shiftType.findMany({
+          where: { teamId: { in: teamIdsWithWeek } },
+          select: { id: true, code: true, label: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const templateShiftIdByTeamNumOffset = new Map<string, string>();
+  const cycleWeeksByTeamNum = new Map<string, number>();
+  const cycleStartByTeamNum = new Map<string, Date | null>();
+  for (const template of templates) {
+    const pair = `${template.teamId}|${template.number}`;
+    cycleWeeksByTeamNum.set(pair, normalizeTemplateCycleWeeks(template.cycleWeeks));
+    cycleStartByTeamNum.set(pair, template.cycleStartDate);
+    for (const entry of template.entries) {
+      if (!entry.shiftTypeId) continue;
+      templateShiftIdByTeamNumOffset.set(`${template.teamId}|${template.number}|${entry.dayOffset}`, entry.shiftTypeId);
+    }
+  }
+
+  const shiftById = new Map(allShifts.map((s) => [s.id, s]));
+
   const namesByRowDay = new Map<string, string[]>();
   /** Lignes « hors grille » : clé stable `${teamId}|${shiftCode}` (plusieurs équipes peuvent partager un même code). */
   const namesByDynamicRowDay = new Map<string, string[]>();
   const dynamicRowOrder: string[] = [];
   const dynamicRowsMeta = new Map<string, { teamLabel: string; shiftCode: string; job: TeamJob; rhythm: TeamRhythm }>();
 
-  for (const a of assignments) {
-    const teamId = teamIdByWeekId.get(a.planningWeekId);
-    if (!teamId || !a.user || !a.shiftType || !a.userId) continue;
-    const team = teamById.get(teamId);
-    if (!team) continue;
-
-    const shiftCode = normalizeShiftCode(a.shiftType.code.trim() || a.shiftType.label);
-    const dk = formatUtcYmd(a.date);
+  function pushName(
+    team: (typeof teams)[number],
+    displayName: string,
+    shift: { code: string; label: string },
+    dk: string,
+  ) {
+    const shiftCode = normalizeShiftCode(shift.code.trim() || shift.label);
     const templateMatch = TEMPLATE_ROWS.find(
       (row) => row.job === team.job && row.rhythm === team.rhythm && row.acceptedCodes.includes(shiftCode),
     );
@@ -182,13 +273,12 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     if (templateMatch) {
       const cellKey = `${templateMatch.id}|${dk}`;
       const list = namesByRowDay.get(cellKey) ?? [];
-      const name = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
-      if (!list.includes(name)) list.push(name);
+      if (!list.includes(displayName)) list.push(displayName);
       namesByRowDay.set(cellKey, list);
-      continue;
+      return;
     }
 
-    const rowKey = `${teamId}|${shiftCode}`;
+    const rowKey = `${team.id}|${shiftCode}`;
     if (!dynamicRowsMeta.has(rowKey)) {
       dynamicRowsMeta.set(rowKey, {
         teamLabel: team.label,
@@ -200,9 +290,92 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     }
     const dynCellKey = `${rowKey}|${dk}`;
     const dlist = namesByDynamicRowDay.get(dynCellKey) ?? [];
-    const dname = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
-    if (!dlist.includes(dname)) dlist.push(dname);
+    if (!dlist.includes(displayName)) dlist.push(displayName);
     namesByDynamicRowDay.set(dynCellKey, dlist);
+  }
+
+  function resolveTemplateShift(
+    teamId: string,
+    effectiveTemplateNumber: number | null | undefined,
+    currentDate: Date,
+  ): { code: string; label: string } | undefined {
+    if (effectiveTemplateNumber == null) return undefined;
+    const pair = `${teamId}|${effectiveTemplateNumber}`;
+    const cycleW = cycleWeeksByTeamNum.get(pair) ?? DEFAULT_TEMPLATE_CYCLE_WEEKS;
+    const cycleStart = cycleStartByTeamNum.get(pair) ?? null;
+    const dayOffset = getTemplateDayOffsetForCycle(currentDate, cycleW, cycleStart);
+    const shiftTypeId = templateShiftIdByTeamNumOffset.get(`${teamId}|${effectiveTemplateNumber}|${dayOffset}`);
+    if (!shiftTypeId) return undefined;
+    return shiftById.get(shiftTypeId);
+  }
+
+  function effectiveShiftForDay(args: {
+    teamId: string;
+    userId: string;
+    currentDate: Date;
+    user: MemberRow["user"];
+    membership: MemberRow | null;
+    weekValidated: boolean;
+  }) {
+    const { teamId, userId, currentDate, user, membership, weekValidated } = args;
+    const dk = formatUtcYmd(currentDate);
+    const cell = cellByTeamUserDay.get(`${teamId}|${userId}|${dk}`);
+    const cfg = planningConfigFromUserOrTeam(user, membership);
+    const timing = alternanceTimingFromUser(user);
+    const effectiveTemplateNumber = getEffectivePlanningConfigForUserTeam(timing, cfg, currentDate).templateNumber;
+    const templateShift = resolveTemplateShift(teamId, effectiveTemplateNumber, currentDate);
+    const cellShift = cell?.shiftType;
+    if (weekValidated) {
+      return cellShift ?? templateShift;
+    }
+    return templateShift;
+  }
+
+  for (const mem of membersWithTeams) {
+    const team = teamById.get(mem.teamId);
+    if (!team) continue;
+    const u = mem.user;
+    const displayName = `${u.lastName.toUpperCase()} ${u.firstName}`;
+    const validated = weekValidatedByTeamId.get(team.id) ?? false;
+    for (const day of weekDays) {
+      const currentDate = new Date(
+        Date.UTC(day.d.getUTCFullYear(), day.d.getUTCMonth(), day.d.getUTCDate(), 12, 0, 0, 0),
+      );
+      const eff = effectiveShiftForDay({
+        teamId: team.id,
+        userId: u.id,
+        currentDate,
+        user: u,
+        membership: mem,
+        weekValidated: validated,
+      });
+      if (!eff) continue;
+      pushName(team, displayName, eff, day.ymd);
+    }
+  }
+
+  for (const a of assignments) {
+    const teamId = teamIdByWeekId.get(a.planningWeekId);
+    if (!teamId || !a.user || !a.userId) continue;
+    if (memberKeySet.has(`${teamId}|${a.userId}`)) continue;
+    const team = teamById.get(teamId);
+    if (!team) continue;
+    const validated = weekValidatedByTeamId.get(team.id) ?? false;
+    const displayName = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
+    const dk = formatUtcYmd(a.date);
+    const currentDate = new Date(
+      Date.UTC(a.date.getUTCFullYear(), a.date.getUTCMonth(), a.date.getUTCDate(), 12, 0, 0, 0),
+    );
+    const eff = effectiveShiftForDay({
+      teamId: team.id,
+      userId: a.userId,
+      currentDate,
+      user: a.user,
+      membership: null,
+      weekValidated: validated,
+    });
+    if (!eff) continue;
+    pushName(team, displayName, eff, dk);
   }
 
   const rows = TEMPLATE_ROWS;
@@ -272,15 +445,16 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
 
       {provisionalFromDraft ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">
-          Au moins une équipe est encore en brouillon pour cette semaine — les noms affichés sont ceux du planning tel
-          qu’enregistré. Validez chaque équipe en administration pour une vue officielle.
+          Au moins une équipe est encore en brouillon pour cette semaine — la grille suit surtout les{" "}
+          <strong>trames</strong> (prévisionnel), comme le planning équipe. Après validation, les affectations
+          enregistrées remplacent la trame jour par jour pour cette équipe.
         </p>
       ) : null}
 
       {weekIds.length === 0 ? (
         <p className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-700 print:hidden">
-          Aucune semaine de planning en base pour cette semaine (toutes équipes). Les noms apparaissent une fois les
-          semaines créées dans le planning admin et des affectations enregistrées.
+          Aucune semaine de planning en base pour cette semaine (toutes équipes). Créez la semaine dans le planning admin
+          : les noms se remplissent alors à partir des trames (et des affectations une fois la semaine validée).
         </p>
       ) : null}
 
