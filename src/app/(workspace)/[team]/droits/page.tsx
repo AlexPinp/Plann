@@ -100,7 +100,10 @@ export default async function DroitsPage({ params, searchParams }: SearchProps) 
   const daysInMonth = monthEnd.getUTCDate();
 
   const users = await prisma.user.findMany({
-    where: { active: true },
+    where: {
+      active: true,
+      teams: { some: { teamId: team.id } },
+    },
     include: {
       skills: { include: { skill: true } },
       availabilities: {
@@ -181,14 +184,12 @@ export default async function DroitsPage({ params, searchParams }: SearchProps) 
       userId: selectedUser.id,
       rangeStart: monthStart,
       rangeEnd: monthEnd,
-      excludeCodesFromWorkedHours: LEAVE_CODES,
     }),
     sumEffectiveWorkedHoursForTeamUserRange({
       teamId: team.id,
       userId: selectedUser.id,
       rangeStart: yearStart,
       rangeEnd: yearEnd,
-      excludeCodesFromWorkedHours: LEAVE_CODES,
     }),
   ]);
   const monthlyRealHours = roundToTenth(monthlyRawHours);

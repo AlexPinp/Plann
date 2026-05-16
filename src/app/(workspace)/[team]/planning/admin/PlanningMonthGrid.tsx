@@ -16,6 +16,7 @@ import {
   type PlanningCommentType,
   type PlanningCommentVisibility,
 } from "@/lib/planning-comments";
+import { shiftCountsInHoursRecap } from "@/lib/shift-type-recap";
 import { getShiftDurationHours } from "@/lib/shift-hours";
 
 export type DayCol = { key: string; dayNum: number; dow: string };
@@ -31,6 +32,7 @@ export type ShiftOption = {
   label: string;
   startsAt: string;
   endsAt: string;
+  countsInHoursRecap: boolean;
 };
 type PlanningCommentItem = {
   id: string;
@@ -77,9 +79,6 @@ type Props = {
   /** `${userId}|${yyyy-MM-dd}` -> commentaires */
   commentsByKey: Record<string, PlanningCommentItem[]>;
 };
-
-/** Aligné sur le récap Droits : ces codes ne comptent pas dans les heures travaillées. */
-const EXCLUDE_CODES_FROM_WORKED_HOURS = ["CA", "CF", "CH", "RTT"] as const;
 
 const SYNTH_ORDER = [
   "JD1",
@@ -284,7 +283,7 @@ export function PlanningMonthGrid({
         const sid = shiftValueForCell(k);
         if (!sid) continue;
         const st = shiftById.get(sid);
-        if (!st || EXCLUDE_CODES_FROM_WORKED_HOURS.some((c) => c === st.code)) continue;
+        if (!st || !shiftCountsInHoursRecap(st)) continue;
         sum += getShiftDurationHours(st.startsAt, st.endsAt);
       }
       map[u.id] = sum;
@@ -371,21 +370,17 @@ export function PlanningMonthGrid({
 
   return (
     <>
-      <div className="space-y-3">
-        <div className="mx-auto w-max max-w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-center text-sm font-semibold capitalize text-zinc-900">
-          {monthLabel}
-        </div>
-
+      <div>
         <div
           ref={gridScrollRef}
-          className="mx-auto max-h-[85vh] w-max max-w-full overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm"
+          className="mx-auto max-h-[calc(100vh-10.5rem)] w-max max-w-full overflow-auto rounded-lg border border-zinc-300 bg-white shadow-sm"
         >
         <table className="min-w-max border-collapse text-[11px]">
           <thead>
             <tr className="bg-zinc-100">
               <th
                 rowSpan={2}
-                className="sticky left-0 top-0 z-40 min-w-[140px] border border-zinc-300 bg-zinc-100 px-2 py-1 text-left font-semibold text-zinc-800"
+                className="sticky left-0 top-0 z-40 min-w-[132px] border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-left font-semibold text-zinc-800"
               >
                 Agent
               </th>
@@ -393,7 +388,7 @@ export function PlanningMonthGrid({
                 <th
                   key={`dow-${d.key}`}
                   className={[
-                    "sticky top-0 z-30 min-w-[36px] border border-zinc-300 px-0.5 py-1 text-center font-semibold",
+                    "sticky top-0 z-30 min-w-[34px] border border-zinc-300 px-0.5 py-0.5 text-center font-semibold",
                     weekendOrHolidayByDayKey[d.key] ? "bg-zinc-300 text-zinc-700" : "bg-zinc-100 text-zinc-700",
                   ].join(" ")}
                 >
@@ -403,17 +398,15 @@ export function PlanningMonthGrid({
               <th
                 rowSpan={2}
                 title="Heures travaillées sur le mois (somme des durées des codes horaires)"
-                className="sticky top-0 z-30 w-[34px] min-w-[34px] max-w-[34px] border border-zinc-300 bg-zinc-200 px-0 py-1 text-center text-[9px] font-semibold leading-tight text-zinc-800"
+                className="sticky top-0 z-30 w-[30px] min-w-[30px] max-w-[30px] border border-zinc-300 bg-zinc-200 px-0 py-0.5 text-center text-[9px] font-semibold leading-none text-zinc-800"
               >
                 h
-                <br />
-                mois
               </th>
               <th
                 colSpan={legend.length}
-                className="sticky top-0 z-30 border border-zinc-300 bg-zinc-200 px-2 py-1 text-center text-xs font-semibold text-zinc-800"
+                className="sticky top-0 z-30 border border-zinc-300 bg-zinc-200 px-1.5 py-0.5 text-center text-[10px] font-semibold text-zinc-800"
               >
-                Synthèse (compte par code)
+                Synthèse
               </th>
             </tr>
             <tr className="bg-zinc-50">
@@ -421,7 +414,7 @@ export function PlanningMonthGrid({
                 <th
                   key={`num-${d.key}`}
                   className={[
-                    "sticky top-[28px] z-30 border border-zinc-300 px-0.5 py-1 text-center font-medium text-zinc-800",
+                    "sticky top-[22px] z-30 border border-zinc-300 px-0.5 py-0.5 text-center font-medium text-zinc-800",
                     weekendOrHolidayByDayKey[d.key] ? "bg-zinc-300" : "bg-zinc-50",
                   ].join(" ")}
                 >
@@ -431,7 +424,7 @@ export function PlanningMonthGrid({
               {legend.map((s) => (
                 <th
                   key={`leg-${s.code}`}
-                  className="sticky top-[28px] z-30 min-w-[22px] border border-zinc-300 px-0 py-1 text-center text-[10px] font-semibold leading-tight text-zinc-700"
+                  className="sticky top-[22px] z-30 min-w-[22px] border border-zinc-300 px-0 py-0.5 text-center text-[10px] font-semibold leading-none text-zinc-700"
                   style={{ backgroundColor: s.color }}
                 >
                   {s.code}
@@ -445,7 +438,7 @@ export function PlanningMonthGrid({
                 <tr className="bg-zinc-200">
                   <td
                     colSpan={days.length + legend.length + 2}
-                    className="sticky left-0 z-20 border border-zinc-300 px-2 py-1 font-semibold text-zinc-800"
+                    className="sticky left-0 z-20 border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-800"
                     style={{ backgroundColor: group.color }}
                   >
                     {group.label}
@@ -454,7 +447,7 @@ export function PlanningMonthGrid({
                 {group.users.map((u) => (
                   <tr key={u.id} className="hover:bg-zinc-50/80">
                     <td
-                      className="sticky left-0 z-20 whitespace-nowrap border border-zinc-200 px-2 py-0 font-medium text-zinc-900"
+                      className="sticky left-0 z-20 whitespace-nowrap border border-zinc-200 px-1.5 py-0 text-[10px] font-medium leading-tight text-zinc-900"
                       style={{ backgroundColor: group.color }}
                     >
                       {u.displayName}
@@ -466,7 +459,7 @@ export function PlanningMonthGrid({
                       const firstType = cellComments[0]?.type as PlanningCommentType | undefined;
                       return (
                         <td key={k} className="border border-zinc-200 p-0 align-middle">
-                          <div className="flex min-w-[36px] flex-col">
+                          <div className="flex min-w-[34px] flex-col">
                             <form action={setPlanningCell} className="m-0">
                               <input type="hidden" name="teamSlug" value={teamSlug} />
                               <input type="hidden" name="userId" value={u.id} />
@@ -474,7 +467,7 @@ export function PlanningMonthGrid({
                               <select
                                 name="shiftTypeId"
                                 value={displayId}
-                                className="h-7 w-full cursor-pointer appearance-none border-0 bg-transparent px-0 py-0 text-center text-[10px] font-bold text-zinc-900 outline-none focus:ring-1 focus:ring-zinc-400"
+                                className="h-6 w-full cursor-pointer appearance-none border-0 bg-transparent px-0 py-0 text-center text-[10px] font-bold leading-none text-zinc-900 outline-none focus:ring-1 focus:ring-zinc-400"
                                 style={{
                                   backgroundColor: displayId
                                     ? (shifts.find((s) => s.id === displayId)?.color ?? "#fff")
@@ -497,7 +490,7 @@ export function PlanningMonthGrid({
                             <button
                               type="button"
                               className={[
-                                "inline-flex h-4 w-full items-center justify-center border-t border-zinc-300 text-[9px] font-semibold leading-none",
+                                "inline-flex h-3 w-full items-center justify-center border-t border-zinc-300 text-[8px] font-semibold leading-none",
                                 cellComments.length > 0
                                   ? "bg-sky-100 text-sky-700 hover:bg-sky-200"
                                   : "bg-white text-zinc-500 hover:bg-zinc-100",
@@ -531,7 +524,7 @@ export function PlanningMonthGrid({
                         </td>
                       );
                     })}
-                    <td className="w-[34px] min-w-[34px] max-w-[34px] border border-zinc-200 bg-zinc-50 px-0 py-0.5 text-center tabular-nums text-[9px] font-semibold text-zinc-900">
+                    <td className="w-[30px] min-w-[30px] max-w-[30px] border border-zinc-200 bg-zinc-50 px-0 py-0 text-center tabular-nums text-[9px] font-semibold leading-none text-zinc-900">
                       {formatMonthHoursDisplay(monthlyWorkedHoursByUserId[u.id] ?? 0)}
                     </td>
                     {legend.map((s) => (

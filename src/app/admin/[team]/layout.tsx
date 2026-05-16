@@ -17,7 +17,7 @@ export default async function AdminTeamLayout({ children, params }: Props) {
     <div className="flex min-h-full flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/95 backdrop-blur print:hidden">
         <div className="border-b border-[var(--border)]">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-2 sm:px-4 md:px-6">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-1.5 sm:px-4 md:px-6">
             <Link
               href={workspacePath(teamSlug, "planning-moi")}
               className="text-base font-semibold tracking-tight text-[var(--text)] hover:opacity-80"
@@ -63,7 +63,7 @@ export default async function AdminTeamLayout({ children, params }: Props) {
           </div>
         </div>
 
-        <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-y-2 px-3 py-2.5 sm:px-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-x-4 md:px-6">
+        <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-y-1 px-3 py-1.5 sm:px-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-x-4 md:px-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 md:justify-self-start">
             <span className="text-sm font-bold text-[var(--text)]">Administration</span>
             <span className="text-xs font-medium text-[var(--text-muted)]">{ctx.team.label}</span>
@@ -104,7 +104,7 @@ export default async function AdminTeamLayout({ children, params }: Props) {
           </div>
         </div>
       </header>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6">{children}</div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-3 md:px-6">{children}</div>
     </div>
   );
 }

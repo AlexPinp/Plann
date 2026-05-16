@@ -39,6 +39,7 @@ export async function findManyShiftTypesOrdered(teamId: string): Promise<{
       startsAt: string;
       endsAt: string;
       category: string;
+      countsInHoursRecap: boolean;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -53,6 +54,7 @@ export async function findManyShiftTypesOrdered(teamId: string): Promise<{
         "startsAt",
         "endsAt",
         "category"::text AS "category",
+        "countsInHoursRecap",
         "createdAt",
         "updatedAt"
       FROM "ShiftType"

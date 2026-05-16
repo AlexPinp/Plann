@@ -67,6 +67,7 @@ export async function ensureBaselineData() {
           startsAt: s.startsAt,
           endsAt: s.endsAt,
           category: s.category,
+          countsInHoursRecap: s.countsInHoursRecap,
         },
       });
       if (s.skills.length > 0) {
@@ -104,8 +105,13 @@ export async function ensureBaselineData() {
       { code: "SSU", label: "SSU", color: "#ddd6fe", startsAt: "07:00", endsAt: "19:00", category: ShiftCategory.JOUR },
       { code: "JF", label: "JF", color: "#e5e7eb", startsAt: "09:00", endsAt: "17:00", category: ShiftCategory.JOUR },
     ] as const;
+    const codesExcludedFromHoursRecap = new Set(["CA", "RTT"]);
     await prisma.shiftType.createMany({
-      data: baselineRows.map((row) => ({ ...row, teamId: defaultTeam.id })),
+      data: baselineRows.map((row) => ({
+        ...row,
+        teamId: defaultTeam.id,
+        countsInHoursRecap: !codesExcludedFromHoursRecap.has(row.code),
+      })),
       skipDuplicates: true,
     });
 

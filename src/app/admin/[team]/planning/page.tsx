@@ -32,6 +32,7 @@ const SHIFT_TYPE_SELECT = {
   color: true,
   startsAt: true,
   endsAt: true,
+  countsInHoursRecap: true,
 } as const;
 
 const DOW_FR = ["D", "L", "M", "M", "J", "V", "S"];
@@ -287,16 +288,12 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
     label: s.label,
     startsAt: s.startsAt,
     endsAt: s.endsAt,
+    countsInHoursRecap: s.countsInHoursRecap,
   }));
 
   const prev = addMonths(y, m, -1);
   const next = addMonths(y, m, 1);
   const yearOptions = getYearOptions(new Date().getUTCFullYear());
-  const rowOrderLabelByMode: Record<RowOrderMode, string> = {
-    team: "Equipe",
-    template: "N° trame",
-    alpha: "Ordre alphabetique",
-  };
   const templateShiftByNumberAndOffset: Record<string, string> = {};
   const cycleWeeksByTemplateNumber = new Map<number, number>();
   const cycleStartDateByTemplateNumber = new Map<number, Date | null>();
@@ -374,13 +371,11 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
   const adminPlanningPath = adminTeamPath(team.slug, "planning");
 
   return (
-    <main className="relative left-1/2 right-1/2 w-screen -translate-x-1/2 flex-1 px-3 py-4 sm:px-4 md:px-6 md:py-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-zinc-900 sm:text-xl md:text-2xl">Planning mensuel </h1>
-          <p className="text-sm text-zinc-600">
-            Version de travail
-          </p>
+    <main className="relative left-1/2 right-1/2 w-screen -translate-x-1/2 flex-1 px-3 py-2 sm:px-4 md:px-6 md:py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h1 className="text-base font-semibold text-zinc-900 sm:text-lg">Planning mensuel</h1>
+          <span className="text-xs text-zinc-500">Version de travail</span>
         </div>
         <MonthNavigator
           basePath={adminPlanningPath}
@@ -400,22 +395,23 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
                 <select
                   name="rowOrder"
                   defaultValue={rowOrder}
-                  className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)]"
+                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text)]"
+                  title="Tri des lignes"
                 >
-                  <option value="team">Equipe</option>
-                  <option value="template">N° trame</option>
-                  <option value="alpha">Ordre alphabetique</option>
+                  <option value="team">Tri : Equipe</option>
+                  <option value="template">Tri : N° trame</option>
+                  <option value="alpha">Tri : Ordre alphabetique</option>
                 </select>
                 <button
                   type="submit"
-                  className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
                 >
-                  Tri
+                  OK
                 </button>
               </form>
               <Link
                 href={workspacePath(team.slug, "planning-equipe")}
-                className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+                className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
               >
                 Planning equipe
               </Link>
@@ -456,18 +452,13 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
           }
         />
       </div>
-      <p className="mb-3 text-xs font-medium text-zinc-600">Tri des lignes: {rowOrderLabelByMode[rowOrder]}</p>
-
       {rollingHoursViolations.length > 0 ? (
         <div
-          className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-4 text-sm text-rose-950 shadow-sm"
+          className="mb-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-950 shadow-sm"
           role="alert"
         >
           <p className="font-semibold text-rose-900">Dépassement de 48 h sur 7 jours glissants</p>
-          <p className="mt-1 text-xs text-rose-800">
-            Astreintes comptées sur une fenêtre de 7 jours civils consécutifs ; codes CA, CF, CH et RTT exclus (comme sur
-            la page Droits). Toutes les équipes sont prises en compte pour chaque agent.
-          </p>
+          
           <ul className="mt-3 space-y-2">
             {rollingHoursViolations.map((v) => (
               <li key={v.userId} className="rounded-md border border-rose-200 bg-white/80 px-3 py-2">
@@ -489,7 +480,7 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
 
       {sectorCompetenceViolations.length > 0 ? (
         <div
-          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm"
+          className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 shadow-sm"
           role="alert"
         >
           <p className="font-semibold text-amber-900">Problèmes de compétences</p>

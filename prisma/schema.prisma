@@ -277,6 +277,8 @@ model ShiftType {
   startsAt    String
   endsAt      String
   category    ShiftCategory
+  /** Si false, le code n'est pas compté dans le récap d'heures (planning admin, Droits). */
+  countsInHoursRecap Boolean @default(true)
   assignments Assignment[]
   templateEntries PlanningTemplateEntry[]
   skills      ShiftSkill[]
@@ -326,6 +328,7 @@ model PlanningWeek {
 
   @@unique([teamId, weekStart])
   @@index([teamId])
+  @@index([weekStart])
 }
 
 model PlanningTemplate {

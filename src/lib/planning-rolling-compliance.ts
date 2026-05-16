@@ -1,17 +1,10 @@
 import { format } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { SHIFT_TYPE_RECAP_SELECT, shiftCountsInHoursRecap } from "@/lib/shift-type-recap";
 import { getShiftDurationHours } from "@/lib/shift-hours";
-
-/** Codes exclus du cumul « heures travaillées » (aligné sur la page Droits). */
-const LEAVE_CODES_EXCLUDED_FROM_WORKED_HOURS = new Set(["CA", "CF", "CH", "RTT"]);
 
 const ROLLING_DAYS = 7;
 const WEEKLY_HOURS_LIMIT = 48;
-const SHIFT_TYPE_SELECT = {
-  code: true,
-  startsAt: true,
-  endsAt: true,
-} as const;
 
 function addUtcDays(d: Date, days: number): Date {
   const x = new Date(d);
@@ -61,7 +54,7 @@ export async function findRolling7DayHoursViolations(options: {
       date: { gte: ext, lte: monthRangeEnd },
     },
     include: {
-      shiftType: { select: SHIFT_TYPE_SELECT },
+      shiftType: { select: SHIFT_TYPE_RECAP_SELECT },
       user: { select: { id: true, firstName: true, lastName: true } },
     },
   });
@@ -69,7 +62,7 @@ export async function findRolling7DayHoursViolations(options: {
   const hoursByUserAndDay = new Map<string, Map<string, number>>();
   for (const a of assignments) {
     if (!a.userId || !a.user) continue;
-    if (LEAVE_CODES_EXCLUDED_FROM_WORKED_HOURS.has(a.shiftType.code)) continue;
+    if (!shiftCountsInHoursRecap(a.shiftType)) continue;
     const h = getShiftDurationHours(a.shiftType.startsAt, a.shiftType.endsAt);
     if (h <= 0) continue;
     const dk = dateKeyUtc(a.date);

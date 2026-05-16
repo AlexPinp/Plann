@@ -91,9 +91,6 @@ export default async function AdminCommentairesSuivisPage({ searchParams, params
     <main>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Commentaires et suivis</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-600">
-          Deux outils centralisés pour les commentaires opérationnels et le suivi des sujets récurrents.
-        </p>
       </div>
 
       {commentCreated ? <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Commentaire créé.</p> : null}
@@ -108,7 +105,6 @@ export default async function AdminCommentairesSuivisPage({ searchParams, params
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">Commentaires opérationnels</h2>
-            <p className="text-xs text-zinc-500">Mois, dates, objet, personnel, formateurs, commentaires et état.</p>
           </div>
           <details className="rounded-lg border border-zinc-300 bg-white">
             <summary className="cursor-pointer list-none px-2 py-1 text-sm font-semibold text-zinc-700">+</summary>
@@ -233,7 +229,7 @@ export default async function AdminCommentairesSuivisPage({ searchParams, params
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">Suivi périodique</h2>
-            <p className="text-xs text-zinc-500">Objet, personnes concernées, dernière date de suivi et prochaine date.</p>
+            
           </div>
           <details className="rounded-lg border border-zinc-300 bg-white">
             <summary className="cursor-pointer list-none px-2 py-1 text-sm font-semibold text-zinc-700">+</summary>

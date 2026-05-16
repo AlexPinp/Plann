@@ -8,6 +8,7 @@ import {
   PrismaClientKnownRequestError,
 } from "@prisma/client/runtime/client";
 import { getShiftMutationErrorMessage } from "@/lib/shift-mutation-errors";
+import { parseCountsInHoursRecapFromForm } from "@/lib/shift-type-recap";
 import { getAllTeams, getTeamBySlug, LEGACY_DEFAULT_TEAM_SLUG, requireTeamAdmin } from "@/lib/team";
 import { adminTeamPath, revalidateTeamPlanningSurfaces } from "@/lib/routes";
 
@@ -67,6 +68,7 @@ export async function createShiftCode(formData: FormData) {
   const category = parseCategory(formData.get("category"));
   const startsAt = parseTime(formData.get("startsAt"), "08:00");
   const endsAt = parseTime(formData.get("endsAt"), "16:00");
+  const countsInHoursRecap = parseCountsInHoursRecapFromForm(formData);
 
   if (!code || !label) {
     redirect(basePath + "?error=" + encodeURIComponent("Code, nom, heure de debut et heure de fin sont obligatoires."));
@@ -82,6 +84,7 @@ export async function createShiftCode(formData: FormData) {
         category,
         startsAt,
         endsAt,
+        countsInHoursRecap,
       },
     });
   } catch (error) {
@@ -121,6 +124,7 @@ export async function updateShiftCode(formData: FormData) {
   const category = parseCategory(formData.get("category"));
   const startsAt = parseTime(formData.get("startsAt"), existing.startsAt);
   const endsAt = parseTime(formData.get("endsAt"), existing.endsAt);
+  const countsInHoursRecap = parseCountsInHoursRecapFromForm(formData);
 
   if (!code || !label) {
     redirect(basePath + "?error=" + encodeURIComponent("Code, nom, heure de debut et heure de fin sont obligatoires."));
@@ -136,6 +140,7 @@ export async function updateShiftCode(formData: FormData) {
         category,
         startsAt,
         endsAt,
+        countsInHoursRecap,
       },
     });
   } catch (error) {
@@ -231,6 +236,7 @@ export async function copyShiftCodesFromTeam(formData: FormData) {
           startsAt: s.startsAt,
           endsAt: s.endsAt,
           category: s.category,
+          countsInHoursRecap: s.countsInHoursRecap,
         },
       });
       existingCodes.add(s.code);

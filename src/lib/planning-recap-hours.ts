@@ -11,15 +11,9 @@ import {
   normalizeTemplateCycleWeeks,
 } from "@/lib/planning-template";
 import { prisma } from "@/lib/prisma";
+import { SHIFT_TYPE_RECAP_SELECT, shiftCountsInHoursRecap } from "@/lib/shift-type-recap";
 import { getShiftDurationHours } from "@/lib/shift-hours";
 import { startOfIsoWeekMondayUtc } from "@/lib/planning-week";
-
-const SHIFT_TYPE_SELECT = {
-  id: true,
-  code: true,
-  startsAt: true,
-  endsAt: true,
-} as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,9 +48,8 @@ export async function sumEffectiveWorkedHoursForTeamUserRange(options: {
   userId: string;
   rangeStart: Date;
   rangeEnd: Date;
-  excludeCodesFromWorkedHours: readonly string[];
 }): Promise<number> {
-  const { teamId, userId, rangeStart, rangeEnd, excludeCodesFromWorkedHours } = options;
+  const { teamId, userId, rangeStart, rangeEnd } = options;
 
   const membership = await prisma.userTeam.findUnique({
     where: { userId_teamId: { userId, teamId } },
@@ -85,12 +78,12 @@ export async function sumEffectiveWorkedHoursForTeamUserRange(options: {
         date: { gte: rangeStart, lte: rangeEnd },
         planningWeek: { teamId },
       },
-      include: { shiftType: { select: SHIFT_TYPE_SELECT } },
+      include: { shiftType: { select: SHIFT_TYPE_RECAP_SELECT } },
     }),
     prisma.planningWeek.findMany({
       where: { teamId, weekStart: { in: weekStarts } },
     }),
-    prisma.shiftType.findMany({ where: { teamId }, select: SHIFT_TYPE_SELECT }),
+    prisma.shiftType.findMany({ where: { teamId }, select: SHIFT_TYPE_RECAP_SELECT }),
     templateNumbers.length
       ? prisma.planningTemplate.findMany({
           where: { teamId, number: { in: templateNumbers } },
@@ -152,7 +145,7 @@ export async function sumEffectiveWorkedHoursForTeamUserRange(options: {
 
     const effectiveShift = dayValidated ? (cell?.shiftType ?? templateShift) : cell?.shiftType;
 
-    if (effectiveShift && !excludeCodesFromWorkedHours.includes(effectiveShift.code)) {
+    if (effectiveShift && shiftCountsInHoursRecap(effectiveShift)) {
       sum += getShiftDurationHours(effectiveShift.startsAt, effectiveShift.endsAt);
     }
   }

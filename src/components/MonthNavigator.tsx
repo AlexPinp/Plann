@@ -43,28 +43,28 @@ export function MonthNavigator({
   const nextHref = withQuery(basePath, { ...commonParams, year: next.y, month: next.m });
 
   return (
-    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+    <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
       <Link
         href={prevHref}
-        className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+        className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
       >
         &larr;
       </Link>
-      <span className="min-w-[140px] text-center text-sm font-semibold capitalize text-[var(--text)]">
+      <span className="min-w-[120px] text-center text-sm font-semibold capitalize text-[var(--text)]">
         {monthLabel}
       </span>
       <Link
         href={nextHref}
-        className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+        className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
       >
         &rarr;
       </Link>
 
-      <form action={basePath} method="get" className="ml-1 flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
+      <form action={basePath} method="get" className="ml-0.5 flex w-full flex-wrap items-center gap-1 sm:w-auto">
         <select
           name="month"
           defaultValue={String(currentMonth)}
-          className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] sm:w-auto"
+          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text)] sm:w-auto"
         >
           {monthOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -75,7 +75,7 @@ export function MonthNavigator({
         <select
           name="year"
           defaultValue={String(currentYear)}
-          className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] sm:w-auto"
+          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text)] sm:w-auto"
         >
           {yearOptions.map((yy) => (
             <option key={yy} value={yy}>
@@ -88,7 +88,7 @@ export function MonthNavigator({
         ))}
         <button
           type="submit"
-          className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)] sm:w-auto"
+          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)] sm:w-auto"
         >
           Aller
         </button>

@@ -176,6 +176,12 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Valeur (h)</th>
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Couleur</th>
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Catégorie</th>
+              <th
+                className="border-b border-zinc-200 p-3 text-center font-semibold text-zinc-700"
+                title="Compte dans le récap d'heures des agents (planning et Droits)"
+              >
+                Récap h.
+              </th>
               <th className="border-b border-zinc-200 p-3 text-left font-semibold text-zinc-700">Actions</th>
             </tr>
           </thead>
@@ -245,6 +251,19 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
                     <option value={ShiftCategory.NUIT}>NUIT</option>
                   </select>
                 </td>
+                <td className="border-b border-zinc-100 p-3 text-center">
+                  <label className="inline-flex cursor-pointer items-center justify-center">
+                    <input
+                      form={`update-${shift.id}`}
+                      type="checkbox"
+                      name="countsInHoursRecap"
+                      value="1"
+                      defaultChecked={shift.countsInHoursRecap}
+                      className="h-4 w-4 rounded border-zinc-300"
+                      title="Compte dans le récap d'heures"
+                    />
+                  </label>
+                </td>
                 <td className="border-b border-zinc-100 p-3">
                   <div className="flex flex-wrap gap-2">
                     <form id={`update-${shift.id}`} action={updateShiftCode}>
@@ -271,7 +290,7 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
             ))}
             {filteredShifts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-sm text-zinc-500">
+                <td colSpan={9} className="p-6 text-center text-sm text-zinc-500">
                   Aucun code ne correspond au filtre actuel.
                 </td>
               </tr>
@@ -361,6 +380,18 @@ export default async function AdminTeamShiftCodesPage({ params, searchParams }: 
               defaultValue="16:00"
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             />
+          </div>
+          <div className="flex items-end sm:col-span-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                name="countsInHoursRecap"
+                value="1"
+                defaultChecked
+                className="h-4 w-4 rounded border-zinc-300"
+              />
+              Compte dans le récap d&apos;heures
+            </label>
           </div>
           <div className="sm:col-span-2 xl:col-span-1">
             <button

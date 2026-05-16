@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { startOfIsoWeekMondayUtc } from "@/lib/planning-week";
 import { prisma } from "@/lib/prisma";
-import { getAllTeams, getTeamBySlug, requireTeamMembership } from "@/lib/team";
+import { getTeamBySlug, getTeamsByIds } from "@/lib/team";
 import { workspacePath } from "@/lib/routes";
 import { PlanningStatus, TeamJob, TeamRhythm } from "@/generated/prisma/enums";
 import {
@@ -17,6 +17,7 @@ import {
   getEffectivePlanningConfigForUserTeam,
   planningConfigFromUserOrTeam,
 } from "@/lib/planning-alternance";
+import { agentNameInPlanningCell } from "@/lib/user-display";
 import { ExportPdfButton } from "./ExportPdfButton";
 
 type Props = {
@@ -45,6 +46,23 @@ function parseWeekStart(sp: Record<string, string | string[] | undefined>): Date
     return startOfIsoWeekMondayUtc(candidate);
   }
   return startOfIsoWeekMondayUtc(new Date());
+}
+
+type OrganisationScope = "all" | "equipe";
+
+function parseOrganisationScope(sp: Record<string, string | string[] | undefined>): OrganisationScope {
+  return typeof sp.scope === "string" && sp.scope === "equipe" ? "equipe" : "all";
+}
+
+function organisationQuery(
+  orgPath: string,
+  weekParam: string,
+  scope: OrganisationScope,
+): string {
+  const q = new URLSearchParams();
+  q.set("week", weekParam);
+  if (scope === "equipe") q.set("scope", "equipe");
+  return `${orgPath}?${q.toString()}`;
 }
 
 function shiftWeekUtc(monday: Date, deltaWeeks: number): Date {
@@ -108,14 +126,12 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
   const { team: teamSlug } = await params;
   const teamCtx = await getTeamBySlug(teamSlug);
   if (!teamCtx) notFound();
-  await requireTeamMembership(teamSlug);
 
   const sp = await searchParams;
   const weekStart = parseWeekStart(sp);
   const weekParam = formatUtcYmd(weekStart);
-
-  const teams = await getAllTeams();
-  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const scope = parseOrganisationScope(sp);
+  const scopeTeamId = scope === "equipe" ? teamCtx.id : undefined;
 
   const monday = weekStart;
   const sunday = new Date(monday);
@@ -133,14 +149,13 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     return { d, ymd, isWeekend };
   });
 
-  const teamIds = teams.map((t) => t.id);
   const { start: mondayDayStart, end: mondayDayEnd } = utcCalendarDayBounds(weekStart);
 
-  /** Une ligne par équipe pour ce lundi (brouillon ou validé) — évite de n’charger qu’un sous-ensemble d’équipes. */
+  /** Semaines du lundi affiché — toutes équipes ou équipe courante seulement (`scope=equipe`). */
   const planningWeeks = await prisma.planningWeek.findMany({
     where: {
-      teamId: { in: teamIds },
       weekStart: { gte: mondayDayStart, lte: mondayDayEnd },
+      ...(scopeTeamId ? { teamId: scopeTeamId } : {}),
     },
     select: { id: true, teamId: true, status: true },
   });
@@ -150,18 +165,33 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
   const teamIdByWeekId = new Map(planningWeeks.map((w) => [w.id, w.teamId]));
   const weekValidatedByTeamId = new Map(planningWeeks.map((w) => [w.teamId, w.status === PlanningStatus.VALIDATED]));
   const weekIds = planningWeeks.map((w) => w.id);
+  const teamIdsWithWeek = [...new Set(planningWeeks.map((w) => w.teamId))];
 
-  const assignments =
+  const [teams, assignments, membersWithTeams] = await Promise.all([
+    getTeamsByIds(teamIdsWithWeek),
     weekIds.length === 0
-      ? []
-      : await prisma.assignment.findMany({
+      ? Promise.resolve([])
+      : prisma.assignment.findMany({
           where: {
             planningWeekId: { in: weekIds },
             userId: { not: null },
             date: { gte: rangeStart, lte: rangeEnd },
           },
           include: { user: true, shiftType: true },
-        });
+        }),
+    teamIdsWithWeek.length === 0
+      ? Promise.resolve([])
+      : prisma.userTeam.findMany({
+          where: {
+            teamId: { in: teamIdsWithWeek },
+            user: { active: true },
+            showInTeamPlanning: true,
+          },
+          include: { user: true },
+        }),
+  ]);
+
+  const teamById = new Map(teams.map((t) => [t.id, t]));
 
   const cellByTeamUserDay = new Map<string, (typeof assignments)[number]>();
   for (const a of assignments) {
@@ -169,20 +199,6 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     if (!tid || !a.userId) continue;
     cellByTeamUserDay.set(`${tid}|${a.userId}|${formatUtcYmd(a.date)}`, a);
   }
-
-  const teamIdsWithWeek = [...new Set(planningWeeks.map((w) => w.teamId))];
-
-  const membersWithTeams =
-    teamIdsWithWeek.length === 0
-      ? []
-      : await prisma.userTeam.findMany({
-          where: {
-            teamId: { in: teamIdsWithWeek },
-            user: { active: true },
-            showInTeamPlanning: true,
-          },
-          include: { user: true },
-        });
 
   type MemberRow = (typeof membersWithTeams)[number];
 
@@ -305,7 +321,7 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     const team = teamById.get(mem.teamId);
     if (!team) continue;
     const u = mem.user;
-    const displayName = `${u.lastName.toUpperCase()} ${u.firstName}`;
+    const displayName = agentNameInPlanningCell(u.firstName, u.lastName);
     const validated = weekValidatedByTeamId.get(team.id) ?? false;
     for (const day of weekDays) {
       const currentDate = new Date(
@@ -331,7 +347,7 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
     const team = teamById.get(teamId);
     if (!team) continue;
     const validated = weekValidatedByTeamId.get(team.id) ?? false;
-    const displayName = `${a.user.lastName.toUpperCase()} ${a.user.firstName}`;
+    const displayName = agentNameInPlanningCell(a.user.firstName, a.user.lastName);
     const dk = formatUtcYmd(a.date);
     const currentDate = new Date(
       Date.UTC(a.date.getUTCFullYear(), a.date.getUTCMonth(), a.date.getUTCDate(), 12, 0, 0, 0),
@@ -364,6 +380,8 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
   const orgPath = workspacePath(teamCtx.slug, "planification");
   const prevWeek = shiftWeekUtc(weekStart, -1);
   const nextWeek = shiftWeekUtc(weekStart, 1);
+  const prevWeekHref = organisationQuery(orgPath, formatUtcYmd(prevWeek), scope);
+  const nextWeekHref = organisationQuery(orgPath, formatUtcYmd(nextWeek), scope);
   const weekRangeLabel = `${format(monday, "d MMM", { locale: fr })} – ${format(sunday, "d MMM yyyy", { locale: fr })}`;
 
   return (
@@ -374,8 +392,28 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
           <p className="hidden text-sm text-zinc-700 print:block">Semaine : {weekRangeLabel}</p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto print:hidden">
+          <div className="flex rounded-lg border border-zinc-300 bg-white p-0.5 text-sm">
+            <Link
+              href={organisationQuery(orgPath, weekParam, "all")}
+              className={[
+                "rounded-md px-3 py-1.5 font-medium transition-colors",
+                scope === "all" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50",
+              ].join(" ")}
+            >
+              Toutes les équipes
+            </Link>
+            <Link
+              href={organisationQuery(orgPath, weekParam, "equipe")}
+              className={[
+                "rounded-md px-3 py-1.5 font-medium transition-colors",
+                scope === "equipe" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50",
+              ].join(" ")}
+            >
+              {teamCtx.label}
+            </Link>
+          </div>
           <Link
-            href={`${orgPath}?week=${formatUtcYmd(prevWeek)}`}
+            href={prevWeekHref}
             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
           >
             &larr; Semaine précédente
@@ -384,7 +422,7 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
             {weekRangeLabel}
           </span>
           <Link
-            href={`${orgPath}?week=${formatUtcYmd(nextWeek)}`}
+            href={nextWeekHref}
             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
           >
             Semaine suivante &rarr;
@@ -393,6 +431,7 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
             <label htmlFor="org-week" className="sr-only">
               Semaine (lundi)
             </label>
+            {scope === "equipe" ? <input type="hidden" name="scope" value="equipe" /> : null}
             <input
               id="org-week"
               type="date"
@@ -423,7 +462,8 @@ export default async function OrganisationWeekPage({ params, searchParams }: Pro
 
       {weekIds.length === 0 ? (
         <p className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-700 print:hidden">
-          Aucune semaine de planning en base pour cette semaine (toutes équipes). Créez la semaine dans le planning admin
+          Aucune semaine de planning en base pour cette semaine
+          {scope === "equipe" ? ` (${teamCtx.label})` : " (équipes concernées)"}. Créez la semaine dans le planning admin
           : les noms se remplissent alors à partir des trames (et des affectations une fois la semaine validée).
         </p>
       ) : null}

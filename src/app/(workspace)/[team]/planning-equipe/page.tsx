@@ -127,7 +127,18 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
 
   const memberUserIds = members.map((m) => m.userId);
 
-  const [assignments, shifts, planningWeeks, comments] = await Promise.all([
+  const usedTemplateNumbers = Array.from(
+    new Set(
+      members.flatMap((m) => {
+        const cfg = planningConfigFromUserOrTeam(m.user, m);
+        return [cfg.planningTemplateNumber, cfg.planningTemplateNumberA, cfg.planningTemplateNumberB].filter(
+          (n): n is number => typeof n === "number",
+        );
+      }),
+    ),
+  );
+
+  const [assignments, shifts, planningWeeks, comments, templates] = await Promise.all([
     prisma.assignment.findMany({
       where: {
         date: { gte: rangeStart, lte: rangeEnd },
@@ -151,6 +162,12 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
       },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
     }),
+    usedTemplateNumbers.length
+      ? prisma.planningTemplate.findMany({
+          where: { teamId: team.id, number: { in: usedTemplateNumbers } },
+          include: { entries: { where: { shiftTypeId: { not: null } } } },
+        })
+      : Promise.resolve([]),
   ]);
 
   const validatedWeekStarts = new Set(
@@ -171,23 +188,6 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
     const ws = startOfIsoWeekMondayUtc(new Date(Date.UTC(y, m - 1, dayNum, 12, 0, 0)));
     return validatedWeekStarts.has(ws.getTime());
   };
-
-  const usedTemplateNumbers = Array.from(
-    new Set(
-      members.flatMap((m) => {
-        const cfg = planningConfigFromUserOrTeam(m.user, m);
-        return [cfg.planningTemplateNumber, cfg.planningTemplateNumberA, cfg.planningTemplateNumberB].filter(
-          (n): n is number => typeof n === "number",
-        );
-      }),
-    ),
-  );
-  const templates = usedTemplateNumbers.length
-    ? await prisma.planningTemplate.findMany({
-        where: { teamId: team.id, number: { in: usedTemplateNumbers } },
-        include: { entries: { where: { shiftTypeId: { not: null } } } },
-      })
-    : [];
 
   const cellMap: Record<string, typeof assignments[number]> = {};
   for (const a of assignments) {

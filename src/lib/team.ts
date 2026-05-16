@@ -41,6 +41,15 @@ export const getTeamBySlug = cache(async (slug: string) => {
   return prisma.team.findUnique({ where: { slug } });
 });
 
+/** Équipes par identifiants (ordre d'affichage), pour vues multi-équipes ciblées. */
+export async function getTeamsByIds(teamIds: string[]) {
+  if (teamIds.length === 0) return [];
+  return prisma.team.findMany({
+    where: { id: { in: teamIds } },
+    orderBy: [{ displayOrder: "asc" }, { label: "asc" }],
+  });
+}
+
 /** Toutes les équipes auxquelles appartient un utilisateur, primaire d'abord. */
 export async function getUserTeams(userId: string): Promise<UserTeamWithTeam[]> {
   return prisma.userTeam.findMany({
