@@ -413,7 +413,7 @@ export default async function PlanningAdminPage({ params, searchParams }: Search
                 href={workspacePath(team.slug, "planning-equipe")}
                 className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
               >
-                Planning equipe
+                Planning équipe
               </Link>
               {allValidated ? (
                 <div className="ml-1 flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-1">

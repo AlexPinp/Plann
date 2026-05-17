@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { AppLogo } from "@/components/AppLogo";
 import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { canEditPlanningAndStaff } from "@/lib/user-roles";
-import { getUserTeams, requireTeamMembership } from "@/lib/team";
+import { getTeamSwitcherOptions, requireTeamMembership } from "@/lib/team";
 import { adminTeamPath, workspacePath } from "@/lib/routes";
 import { signOut } from "../../login/actions";
 
@@ -15,39 +16,30 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
   const { team: teamSlug } = await params;
   const ctx = await requireTeamMembership(teamSlug);
   const canStaff = canEditPlanningAndStaff(ctx.user.role);
-  const memberships = await getUserTeams(ctx.user.id);
-  const switcherTeams = memberships.map((ut) => ({
-    slug: ut.team.slug,
-    label: ut.team.label,
-    color: ut.team.color,
-  }));
+  const switcherTeams = await getTeamSwitcherOptions(ctx.user.id, ctx.user.role);
 
   return (
-    <div className="flex min-h-full flex-col bg-[var(--surface-soft)]">
-      <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/95 backdrop-blur print:hidden">
+    <div className="flex min-h-full flex-col bg-[var(--background)]">
+      <header className="app-shell-header print:hidden">
+        <div className="app-header-bar" aria-hidden />
         <div className="border-b border-[var(--border)]">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-2 sm:px-4 md:px-6">
-            <Link
-              href={workspacePath(teamSlug, "planning-moi")}
-              className="text-base font-semibold tracking-tight text-[var(--text)] hover:opacity-80"
-            >
-              Plann
-            </Link>
-            <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-3">
-            <span className="hidden text-xs text-[var(--text-muted)] sm:inline">
+          <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5 sm:px-4 md:px-6">
+            <AppLogo href={workspacePath(teamSlug, "planning-moi")} />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="hidden rounded-full bg-[var(--primary-soft)] px-2.5 py-1 text-xs font-medium text-[var(--primary)] sm:inline">
               {ctx.user.lastName.toUpperCase()} {ctx.user.firstName}
             </span>
             {canStaff && (
               <Link
                 href={adminTeamPath(teamSlug, "planning")}
-                className="rounded-md border border-[var(--text)] bg-[var(--text)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90"
+                className="ui-btn-primary shrink-0 px-3 py-1.5 text-xs"
               >
                 Administration
               </Link>
             )}
             <Link
               href={`/${teamSlug}/parametres`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)]"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-muted)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
               aria-label="Ouvrir mes paramètres"
               title="Paramètres"
             >
@@ -68,11 +60,8 @@ export default async function TeamWorkspaceLayout({ children, params }: Props) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
               </svg>
             </Link>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-md border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)]"
-              >
+            <form action={signOut} className="shrink-0">
+              <button type="submit" className="ui-btn-ghost">
                 Deconnexion
               </button>
             </form>

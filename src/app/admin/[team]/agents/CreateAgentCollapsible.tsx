@@ -9,32 +9,34 @@ type Props = {
 export function CreateAgentCollapsible({ children }: Props) {
   const [open, setOpen] = useState(false);
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-8 flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-3 text-left text-sm text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100"
-      >
-        <span className="font-medium text-zinc-900">Nouvel agent</span>
-        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-500">Afficher le formulaire</span>
-      </button>
-    );
-  }
-
   return (
-    <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Nouvel agent</h2>
+    <section className="mb-6 w-full">
+      {!open ? (
+        <div className="flex justify-center">
         <button
           type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800"
         >
-          Réduire
+          <span aria-hidden>+</span>
+          Nouvel agent
         </button>
-      </div>
-      {children}
+        </div>
+      ) : (
+        <div className="w-full rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-zinc-900">Nouvel agent</h2>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+            >
+              Annuler
+            </button>
+          </div>
+          {children}
+        </div>
+      )}
     </section>
   );
 }

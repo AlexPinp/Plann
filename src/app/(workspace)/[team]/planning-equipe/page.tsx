@@ -238,7 +238,7 @@ export default async function TeamPlanningPage({ params, searchParams }: Props) 
     <main className="mx-auto w-full max-w-[99vw] flex-1 p-2 sm:p-3 md:p-4 print:max-w-none print:p-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-[var(--text)]">Planning equipe</h1>
+          <h1 className="text-xl font-semibold text-[var(--text)]">Planning équipe</h1>
           {allValidated ? (
             <p className="flex items-center gap-1.5 text-sm text-[var(--success)]">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" /></svg>

@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 type Props = {
-  /** Ouvre par défaut si l’agent est déjà configuré en alternant */
   defaultOpen: boolean;
   children: React.ReactNode;
 };
@@ -11,21 +10,28 @@ type Props = {
 export function AlternanceDetailsCollapsible({ defaultOpen, children }: Props) {
   const [open, setOpen] = useState(defaultOpen);
 
-  return (
-    <div className="mt-2">
+  if (!open) {
+    return (
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-800 shadow-sm transition hover:bg-zinc-50"
+        onClick={() => setOpen(true)}
+        className="text-[11px] font-medium text-zinc-600 underline hover:text-zinc-900"
       >
-        <span className="font-medium text-zinc-900">Configuration alternance (A/B)</span>
-        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          {open ? "Réduire" : "Afficher"}
-        </span>
+        Afficher la configuration A/B
       </button>
-      <div className={open ? "mt-3" : "hidden"} aria-hidden={!open}>
-        {children}
-      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 border-t border-zinc-200 pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="mb-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-800"
+      >
+        Masquer la configuration A/B
+      </button>
+      {children}
     </div>
   );
 }

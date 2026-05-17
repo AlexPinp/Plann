@@ -12,7 +12,7 @@ export default async function LegacyPlanningAdminShortcut({ searchParams }: Sear
   if (!user) {
     redirect("/login?next=/planning/admin");
   }
-  const slug = (await getDefaultTeamSlugForUser(user.id)) ?? LEGACY_DEFAULT_TEAM_SLUG;
+  const slug = (await getDefaultTeamSlugForUser(user.id, user.role)) ?? LEGACY_DEFAULT_TEAM_SLUG;
   const sp = await searchParams;
   const qp = new URLSearchParams();
   if (typeof sp.year === "string") qp.set("year", sp.year);

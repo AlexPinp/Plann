@@ -17,7 +17,7 @@ function tabsForTeam(teamSlug: string): Tab[] {
     },
     {
       segment: "planning-equipe",
-      label: "Planning equipe",
+      label: "Planning équipe",
       match: (path) => path.startsWith(p("planning-equipe")) || path.startsWith(p("planning/")),
     },
     {
@@ -51,47 +51,30 @@ export function WorkspaceTabs({
 
   return (
     <nav
-      className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 border-t border-[var(--border)] bg-white px-3 py-2 sm:px-4 md:px-6"
+      className="mx-auto flex w-full max-w-7xl flex-col gap-2 border-t border-[var(--border)] bg-[var(--surface)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 md:px-6"
       aria-label="Navigation principale"
     >
-      <div className="min-w-0" aria-hidden="true" />
-      <div className="flex min-w-0 justify-center gap-1 overflow-x-auto pb-0.5">
+      <div className="-mx-1 flex min-w-0 flex-1 gap-0.5 overflow-x-auto px-1 pb-0.5 sm:justify-center">
         {agentTabs.map((tab) => (
           <TabLink key={tab.segment} href={workspacePath(teamSlug, tab.segment)} tab={tab} pathname={pathname} />
         ))}
       </div>
-      <div className="flex min-w-0 shrink-0 justify-end">
-        {showSwitcher ? <TeamSwitcher teams={switcherTeams!} currentSlug={teamSlug} /> : null}
-      </div>
+      {showSwitcher ? (
+        <div className="w-full sm:w-auto sm:shrink-0">
+          <TeamSwitcher teams={switcherTeams!} currentSlug={teamSlug} />
+        </div>
+      ) : null}
     </nav>
   );
 }
 
-function TabLink({
-  href,
-  tab,
-  pathname,
-  accent,
-}: {
-  href: string;
-  tab: Tab;
-  pathname: string;
-  accent?: boolean;
-}) {
+function TabLink({ href, tab, pathname }: { href: string; tab: Tab; pathname: string }) {
   const active = tab.match(pathname);
   return (
     <Link
       href={href}
-      className={[
-        "shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:text-sm",
-        active
-          ? accent
-            ? "bg-emerald-50 text-emerald-700"
-            : "bg-[var(--surface-soft)] text-[var(--text)]"
-          : accent
-            ? "text-emerald-700 hover:bg-emerald-50"
-            : "text-[var(--text-muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text)]",
-      ].join(" ")}
+      className={["ui-tab", active ? "ui-tab-active" : "ui-tab-inactive"].join(" ")}
+      aria-current={active ? "page" : undefined}
     >
       {tab.label}
     </Link>

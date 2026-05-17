@@ -16,8 +16,8 @@ export default async function HomePage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col gap-6 px-4 py-16">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900">Choisir une équipe</h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <h1 className="ui-page-title">Choisir une équipe</h1>
+        <p className="ui-page-subtitle">
           Vous appartenez à plusieurs équipes. Sélectionnez celle pour laquelle vous souhaitez consulter le planning.
         </p>
       </div>
@@ -26,14 +26,14 @@ export default async function HomePage() {
           <li key={ut.teamId}>
             <Link
               href={`/${ut.team.slug}/planning-moi`}
-              className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50"
+              className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-sm transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
             >
               <span
                 className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white"
                 style={{ backgroundColor: ut.team.color }}
                 aria-hidden
               />
-              <span className="font-medium text-zinc-900">{ut.team.label}</span>
+              <span className="font-medium text-[var(--text)]">{ut.team.label}</span>
             </Link>
           </li>
         ))}

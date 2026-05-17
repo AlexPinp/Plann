@@ -4,6 +4,7 @@ import type { Team, User, UserTeam } from "@/generated/prisma/client";
 import { UserRole } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { getSessionPrismaUser } from "@/lib/current-user";
+import { hasAccessToAllTeams } from "@/lib/user-roles";
 
 /** Id de l'équipe historique (« Infirmiers de jour »), créée par la migration
  *  avec un id stable. Utilisé PONCTUELLEMENT par le code pré-phase-3 qui ne
@@ -84,13 +85,14 @@ export function isStaffRole(role: UserRole | null | undefined): boolean {
 }
 
 /** Résolution du rôle effectif d'un utilisateur dans une équipe :
- *  - ADMIN global écrase tout,
+ *  - ADMIN / CADRE globaux écrasent le roleInTeam,
  *  - sinon on prend le roleInTeam (AGENT si non-membre). */
 export function effectiveRoleInTeam(
   globalRole: UserRole,
   teamRole: UserRole | null | undefined,
 ): UserRole {
   if (globalRole === UserRole.ADMIN) return UserRole.ADMIN;
+  if (globalRole === UserRole.CADRE) return UserRole.CADRE;
   return teamRole ?? UserRole.AGENT;
 }
 
@@ -111,7 +113,7 @@ export async function requireTeamMembership(slug: string): Promise<TeamContext> 
     where: { userId_teamId: { userId: user.id, teamId: team.id } },
   });
 
-  if (!userTeam && user.role !== UserRole.ADMIN) {
+  if (!userTeam && !hasAccessToAllTeams(user.role)) {
     redirect(
       "/?notice=" +
         encodeURIComponent(`Vous n'appartenez pas à l'équipe ${team.label}.`),
@@ -143,11 +145,34 @@ export async function requireTeamAdmin(slug: string): Promise<TeamContext> {
   return ctx;
 }
 
-/** Slug d'équipe suggéré pour un utilisateur : son équipe primaire, sinon la 1ère. */
-export async function getDefaultTeamSlugForUser(userId: string): Promise<string | null> {
+/** Options pour le sélecteur d'équipe (workspace ou admin). */
+export async function getTeamSwitcherOptions(userId: string, globalRole: UserRole) {
+  if (hasAccessToAllTeams(globalRole)) {
+    const teams = await getAllTeams();
+    return teams.map((t) => ({ slug: t.slug, label: t.label, color: t.color }));
+  }
   const memberships = await getUserTeams(userId);
-  if (memberships.length === 0) return null;
-  return (memberships.find((ut) => ut.isPrimary) ?? memberships[0]).team.slug;
+  return memberships.map((ut) => ({
+    slug: ut.team.slug,
+    label: ut.team.label,
+    color: ut.team.color,
+  }));
+}
+
+/** Slug d'équipe suggéré : équipe primaire, sinon la 1ère (ou 1ère du catalogue si admin/cadre global). */
+export async function getDefaultTeamSlugForUser(
+  userId: string,
+  globalRole?: UserRole,
+): Promise<string | null> {
+  const memberships = await getUserTeams(userId);
+  if (memberships.length > 0) {
+    return (memberships.find((ut) => ut.isPrimary) ?? memberships[0]).team.slug;
+  }
+  if (globalRole && hasAccessToAllTeams(globalRole)) {
+    const teams = await getAllTeams();
+    return teams[0]?.slug ?? null;
+  }
+  return null;
 }
 
 /** Invalide une même route sous chaque slug d'équipe (données globales affichées dans chaque contexte `[team]`). */

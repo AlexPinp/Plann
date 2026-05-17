@@ -46,7 +46,7 @@ export function MonthNavigator({
     <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
       <Link
         href={prevHref}
-        className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+        className="ui-btn-secondary px-2 py-1.5"
       >
         &larr;
       </Link>
@@ -55,7 +55,7 @@ export function MonthNavigator({
       </span>
       <Link
         href={nextHref}
-        className="rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)]"
+        className="ui-btn-secondary px-2 py-1.5"
       >
         &rarr;
       </Link>
@@ -64,7 +64,7 @@ export function MonthNavigator({
         <select
           name="month"
           defaultValue={String(currentMonth)}
-          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text)] sm:w-auto"
+          className="ui-select w-full sm:w-auto"
         >
           {monthOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -75,7 +75,7 @@ export function MonthNavigator({
         <select
           name="year"
           defaultValue={String(currentYear)}
-          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm text-[var(--text)] sm:w-auto"
+          className="ui-select w-full sm:w-auto"
         >
           {yearOptions.map((yy) => (
             <option key={yy} value={yy}>
@@ -88,7 +88,7 @@ export function MonthNavigator({
         ))}
         <button
           type="submit"
-          className="w-full rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-soft)] sm:w-auto"
+          className="ui-btn-secondary w-full sm:w-auto"
         >
           Aller
         </button>

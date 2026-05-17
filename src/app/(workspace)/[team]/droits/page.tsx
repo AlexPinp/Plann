@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { notFound } from "next/navigation";
+import { DroitsRecapView } from "./DroitsRecapView";
 import { getSessionPrismaUser } from "@/lib/current-user";
 import { DEFAULT_PLANNING_RH_PROFILE, planningRhProfileLabelsFr, planningRhRulesByProfile } from "@/lib/planning-rh";
 import { sumEffectiveWorkedHoursForTeamUserRange } from "@/lib/planning-recap-hours";
@@ -11,15 +12,7 @@ import {
 } from "@/lib/work-rate-segments";
 import { prisma } from "@/lib/prisma";
 import { getTeamBySlug } from "@/lib/team";
-import { canEditPlanningAndStaff, roleLabelsFr } from "@/lib/user-roles";
-import type { UserRole } from "@/generated/prisma/enums";
-
-const availabilityLabels: Record<string, string> = {
-  CONGE: "Congé",
-  ARRET: "Arrêt",
-  FORMATION: "Formation",
-  AUTRE: "Autre",
-};
+import { canEditPlanningAndStaff } from "@/lib/user-roles";
 
 const FULL_TIME_WEEKLY_HOURS = 35;
 const LEAVE_CODES = ["CA", "CF", "CH", "RTT"] as const;
@@ -59,12 +52,6 @@ function roundToHalfDay(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function getProgressTone(ratio: number) {
-  if (ratio < 0.6) return "bg-emerald-500";
-  if (ratio < 0.9) return "bg-amber-500";
-  return "bg-rose-500";
 }
 
 export default async function DroitsPage({ params, searchParams }: SearchProps) {
@@ -215,196 +202,36 @@ export default async function DroitsPage({ params, searchParams }: SearchProps) 
     return { code, yearlyQuota, toTake, taken, usedRatio, usedPercent };
   });
 
+
+  const monthLabel = format(referenceDate, "MMMM yyyy", { locale: fr });
+  const profileLabel = planningRhProfileLabelsFr[profile];
+  const profileShort = profileLabel.includes(" - ") ? profileLabel.split(" - ")[0]! : profileLabel;
+
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 md:p-10">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Droits et récapitulatif</h1>
-      
-      </div>
-
-      <form method="get" className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          {canSelectAgent ? (
-            <div className="w-full sm:w-auto">
-              <label htmlFor="agentId" className="mb-1 block text-sm font-medium text-zinc-700">
-                Agent
-              </label>
-              <select
-                id="agentId"
-                name="agentId"
-                defaultValue={selectedUser.id}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 sm:min-w-[280px]"
-              >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.lastName.toUpperCase()} {u.firstName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          <div className="w-full sm:w-auto">
-            <label htmlFor="month" className="mb-1 block text-sm font-medium text-zinc-700">
-              Mois
-            </label>
-            <input
-              id="month"
-              name="month"
-              type="month"
-              defaultValue={selectedMonthInputValue}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
-            />
-          </div>
-
-          {!canSelectAgent ? <input type="hidden" name="agentId" value={selectedUser.id} /> : null}
-
-          <button
-            type="submit"
-            className="w-full rounded-lg border border-zinc-900 bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 sm:w-auto"
-          >
-            Voir le récapitulatif
-          </button>
-        </div>
-      </form>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-zinc-900">Agent</h2>
-          <p className="mt-2 text-base font-medium text-zinc-900">
-            {selectedUser.lastName.toUpperCase()} {selectedUser.firstName}
-          </p>
-          <p className="text-xs text-zinc-500">{selectedUser.email}</p>
-          <p className="mt-3 text-sm text-zinc-700">
-            Rôle: {roleLabelsFr[selectedUser.role as UserRole] ?? selectedUser.role}
-          </p>
-          <p className="text-sm text-zinc-700">
-            Temps de travail (mois affiché) : {selectedMonthWorkPct} %
-          </p>
-          {workRateSegments.length > 0 ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              Segments mois pleins actifs : les totaux annuels (objectifs, repos, quotas congés) sont pondérés mois par
-              mois sur {referenceYear} (moyenne ~ {Math.round(annualAvgRateDecimal * 100)} %).
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-zinc-500">
-              Défaut agent : {selectedUser.workPercentage} %. Ajoutez des segments sur la fiche agent pour des temps
-              partiels par période.
-            </p>
-          )}
-          <p className="text-sm text-zinc-700">
-            Compétences: {selectedUser.skills.length ? selectedUser.skills.map((s) => s.skill.name).join(", ") : "—"}
-          </p>
-          <p className="text-sm text-zinc-700">Profil RH : {planningRhProfileLabelsFr[profile]}</p>
-        </section>
-
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-zinc-900">Heures (mois en cours)</h2>
-         
-          <p className="mt-2 text-sm text-zinc-700">
-            Théorique:{" "}
-            <span className="font-semibold text-zinc-900">
-              {monthlyTheoreticalHours === null ? "N/A (forfait jours)" : `${monthlyTheoreticalHours} h`}
-            </span>
-          </p>
-          <p className="text-sm text-zinc-700">
-            Réel : <span className="font-semibold text-zinc-900">{monthlyRealHours} h</span>
-          </p>
-          <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-xs text-zinc-600">
-              <span>Avancement heures</span>
-              <span className="font-semibold text-zinc-800">{hoursPercent}%</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200">
-              <div
-                className={`h-full transition-all ${getProgressTone(hoursRatio)}`}
-                style={{ width: `${hoursPercent}%` }}
-              />
-            </div>
-          </div>
-         
-          <p className="mt-1 text-xs text-zinc-500">
-            {annualTheoreticalHours === null
-              ? "Repère annuel: N/A (forfait jours, référence en jours)."
-              : `Repère annuel ${referenceYear} (somme des mois au bon %) : ${annualTheoreticalHours} h — équivalent ~ ${weeklyHours} h/semaine sur le mois affiché.`}
-          </p>
-          <div className="mt-4 border-t border-zinc-200 pt-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Heures (année en cours)</h3>
-            <p className="mt-2 text-sm text-zinc-700">
-              Théorique:{" "}
-              <span className="font-semibold text-zinc-900">
-                {annualTheoreticalHours === null ? "N/A (forfait jours)" : `${annualTheoreticalHours} h`}
-              </span>
-            </p>
-            <p className="text-sm text-zinc-700">
-              Réel : <span className="font-semibold text-zinc-900">{annualRealHours} h</span>
-            </p>
-            {annualTheoreticalHours === null ? (
-              <p className="mt-2 text-xs text-zinc-500">
-                Suivi horaire annuel non applicable en forfait jours (référence exprimée en jours).
-              </p>
-            ) : (
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-xs text-zinc-600">
-                  <span>Avancement heures </span>
-                  <span className="font-semibold text-zinc-800">{annualHoursPercent}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200">
-                  <div
-                    className={`h-full transition-all ${getProgressTone(annualHoursRatio)}`}
-                    style={{ width: `${annualHoursPercent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-zinc-900">Congés</h2>
-          <ul className="mt-2 space-y-3 text-sm text-zinc-700">
-            {leaveStats.map((s) => (
-              <li key={s.code}>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="font-medium text-zinc-900">{s.code}</span>
-                  <span className="text-xs font-semibold text-zinc-700">{s.usedPercent}% utilisés</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200">
-                  <div
-                    className={`h-full transition-all ${getProgressTone(s.usedRatio)}`}
-                    style={{ width: `${s.usedPercent}%` }}
-                  />
-                </div>
-                <div className="mt-1 text-xs text-zinc-700">
-                  quota {s.yearlyQuota} j / à poser {s.toTake} j / posés {s.taken} j
-                </div>
-              </li>
-            ))}
-          </ul>
-           </section>
-      </div>
-
-      <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-zinc-900">Absences à venir</h2>
-        <div className="mt-3 text-sm text-zinc-700">
-          {selectedUser.availabilities.length === 0 ? (
-            <span className="text-zinc-500">Aucune absence à venir.</span>
-          ) : (
-            <ul className="space-y-1">
-              {selectedUser.availabilities.map((a) => (
-                <li key={a.id} className="text-xs leading-relaxed">
-                  <span className="font-medium text-zinc-800">{availabilityLabels[a.type] ?? a.type}</span>
-                  <span className="text-zinc-500">
-                    {" "}
-                    : {format(a.startsAt, "dd/MM/yyyy", { locale: fr })} → {format(a.endsAt, "dd/MM/yyyy", { locale: fr })}
-                  </span>
-                  {a.note ? <span className="block text-zinc-500">({a.note})</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </main>
+    <DroitsRecapView
+      canSelectAgent={canSelectAgent}
+      users={users.map((u) => ({ id: u.id, lastName: u.lastName, firstName: u.firstName }))}
+      selectedUser={selectedUser}
+      selectedMonthInputValue={selectedMonthInputValue}
+      monthLabel={monthLabel}
+      referenceYear={referenceYear}
+      profileShort={profileShort}
+      selectedMonthWorkPct={selectedMonthWorkPct}
+      annualAvgWorkPct={Math.round(annualAvgRateDecimal * 100)}
+      hasWorkRateSegments={workRateSegments.length > 0}
+      weeklyHours={weeklyHours}
+      annualRestDays={annualRestDays}
+      annualPublicHolidays={annualPublicHolidays}
+      monthlyTheoreticalHours={monthlyTheoreticalHours}
+      monthlyRealHours={monthlyRealHours}
+      hoursPercent={hoursPercent}
+      hoursRatio={hoursRatio}
+      annualTheoreticalHours={annualTheoreticalHours}
+      annualRealHours={annualRealHours}
+      annualHoursPercent={annualHoursPercent}
+      annualHoursRatio={annualHoursRatio}
+      leaveStats={leaveStats}
+      availabilities={selectedUser.availabilities}
+    />
   );
 }

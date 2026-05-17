@@ -15,7 +15,7 @@ const dmMono = DM_Mono({
 
 export const metadata: Metadata = {
   title: "Plann",
-  description: "Planning equipe infirmiere - service d'urgence",
+  description: "Planning équipe infirmière - service d'urgence",
 };
 
 export default function RootLayout({

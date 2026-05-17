@@ -4,7 +4,16 @@ import { usePathname, useRouter } from "next/navigation";
 
 export type TeamSwitcherOption = { slug: string; label: string; color: string };
 
-export function TeamSwitcher({ teams, currentSlug }: { teams: TeamSwitcherOption[]; currentSlug: string }) {
+export function TeamSwitcher({
+  teams,
+  currentSlug,
+  mode = "workspace",
+}: {
+  teams: TeamSwitcherOption[];
+  currentSlug: string;
+  /** workspace: /{team}/… — admin: /admin/{team}/… */
+  mode?: "workspace" | "admin";
+}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -12,10 +21,17 @@ export function TeamSwitcher({ teams, currentSlug }: { teams: TeamSwitcherOption
 
   function goToTeam(slug: string) {
     const parts = pathname.split("/").filter(Boolean);
-    const targetPath =
-      parts.length === 0
-        ? `/${slug}/planning-moi`
-        : `/${[slug, ...parts.slice(1)].join("/")}`;
+    let targetPath: string;
+
+    if (mode === "admin") {
+      const rest = parts[0] === "admin" ? parts.slice(2) : parts;
+      targetPath = rest.length > 0 ? `/admin/${slug}/${rest.join("/")}` : `/admin/${slug}/planning`;
+    } else if (parts.length === 0) {
+      targetPath = `/${slug}/planning-moi`;
+    } else {
+      targetPath = `/${slug}/${parts.slice(1).join("/")}`;
+    }
+
     const suffix = typeof window !== "undefined" ? `${window.location.search}${window.location.hash}` : "";
     router.push(`${targetPath}${suffix}`);
   }
@@ -26,7 +42,7 @@ export function TeamSwitcher({ teams, currentSlug }: { teams: TeamSwitcherOption
       <select
         value={currentSlug}
         onChange={(e) => goToTeam(e.target.value)}
-        className="min-w-0 flex-1 truncate rounded-full border border-[var(--border)] bg-white py-1.5 pl-3 pr-7 text-xs font-medium text-[var(--text)]"
+        className="ui-select min-w-0 max-w-full flex-1 py-1.5 pl-3 pr-8 text-xs font-medium"
         aria-label="Changer d'équipe"
       >
         {teams.map((t) => (

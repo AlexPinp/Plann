@@ -8,6 +8,6 @@ export default async function AdminIndexPage() {
   if (!user) {
     redirect("/login?next=/admin");
   }
-  const slug = (await getDefaultTeamSlugForUser(user.id)) ?? LEGACY_DEFAULT_TEAM_SLUG;
+  const slug = (await getDefaultTeamSlugForUser(user.id, user.role)) ?? LEGACY_DEFAULT_TEAM_SLUG;
   redirect(adminTeamPath(slug, "planning"));
 }

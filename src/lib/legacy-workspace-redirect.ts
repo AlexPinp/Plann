@@ -9,6 +9,6 @@ export async function redirectLegacyWorkspaceSegment(segment: string, loginNextP
   if (!user) {
     redirect(`/login?next=${encodeURIComponent(loginNextPath)}`);
   }
-  const slug = (await getDefaultTeamSlugForUser(user.id)) ?? LEGACY_DEFAULT_TEAM_SLUG;
+  const slug = (await getDefaultTeamSlugForUser(user.id, user.role)) ?? LEGACY_DEFAULT_TEAM_SLUG;
   redirect(workspacePath(slug, segment));
 }

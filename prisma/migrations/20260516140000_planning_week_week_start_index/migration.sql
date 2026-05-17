@@ -1,2 +1,2 @@
 -- CreateIndex
-CREATE INDEX "PlanningWeek_weekStart_idx" ON "PlanningWeek"("weekStart");
+CREATE INDEX IF NOT EXISTS "PlanningWeek_weekStart_idx" ON "PlanningWeek"("weekStart");

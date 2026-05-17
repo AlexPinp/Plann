@@ -158,6 +158,7 @@ model User {
   planningCommentsCreated PlanningComment[] @relation("PlanningCommentCreator")
   commentaryEntriesCreated CommentaryEntry[] @relation("CommentaryEntryCreator")
   followUpEntriesCreated FollowUpEntry[] @relation("FollowUpEntryCreator")
+  trainingCompletions UserTrainingCompletion[]
   googleCalendarAccount GoogleCalendarAccount?
   /// Appartenance(s) de l'utilisateur aux équipes (IDE jour/nuit, AS jour/nuit, ...)
   teams          UserTeam[]
@@ -202,8 +203,38 @@ model Team {
   templates    PlanningTemplate[]
   weeks        PlanningWeek[]
   shiftTypes   ShiftType[]
+  trainingTypes TeamTrainingType[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
+}
+
+/// Type de formation obligatoire pour une équipe (colonne du tableau formations).
+model TeamTrainingType {
+  id               String                   @id @default(cuid())
+  teamId           String
+  team             Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name             String
+  /// Période de validité en mois (ex. 36 pour AFGSU).
+  recurrenceMonths Int?
+  displayOrder     Int                      @default(0)
+  completions      UserTrainingCompletion[]
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([teamId])
+}
+
+/// Date de dernière formation réalisée par un agent pour un type donné.
+model UserTrainingCompletion {
+  userId          String
+  trainingTypeId  String
+  lastCompletedAt DateTime?        @db.Date
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainingType    TeamTrainingType @relation(fields: [trainingTypeId], references: [id], onDelete: Cascade)
+  updatedAt       DateTime         @updatedAt
+
+  @@id([userId, trainingTypeId])
+  @@index([trainingTypeId])
 }
 
 /// Appartenance d'un utilisateur à une équipe.
@@ -457,6 +488,8 @@ model CommentaryEntry {
 model FollowUpEntry {
   id            String    @id @default(cuid())
   subject       String
+  recurrence    String?
+  referents     String?
   personnel     String?
   lastDate      DateTime?
   lastBy        String?

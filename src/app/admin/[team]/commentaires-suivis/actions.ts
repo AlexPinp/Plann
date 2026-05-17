@@ -110,6 +110,8 @@ export async function createFollowUpEntry(formData: FormData) {
   await followUpEntry.create({
     data: {
       subject,
+      recurrence: normalizeOptionalText(formData.get("recurrence")),
+      referents: normalizeOptionalText(formData.get("referents")),
       personnel: normalizeOptionalText(formData.get("personnel")),
       lastDate: parseOptionalDate(formData.get("lastDate")),
       lastBy: normalizeOptionalText(formData.get("lastBy")),
@@ -183,6 +185,8 @@ export async function updateFollowUpEntry(formData: FormData) {
     where: { id },
     data: {
       subject,
+      recurrence: normalizeOptionalText(formData.get("recurrence")),
+      referents: normalizeOptionalText(formData.get("referents")),
       personnel: normalizeOptionalText(formData.get("personnel")),
       lastDate: parseOptionalDate(formData.get("lastDate")),
       lastBy: normalizeOptionalText(formData.get("lastBy")),

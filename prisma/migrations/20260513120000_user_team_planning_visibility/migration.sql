@@ -1,0 +1,1 @@
+-- Déjà couvert par 20260511100000_user_team_planning_visibility (dossier doublon sans SQL).
